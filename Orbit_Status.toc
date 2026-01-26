@@ -1,0 +1,37 @@
+## Interface: 120001, 120000
+## Title: Dock: Status
+## Notes: A customizable status panel that replaces Blizzard's Status Bars.
+## Author: MoONSHO7 / M7
+## Version: @project-version@
+## Dependencies: Orbit
+## SavedVariables: Orbit_StatusDB
+## IconTexture: Interface\AddOns\Orbit_Status\Orbit.png
+## Group: Orbit
+## Category: Orbit UI
+
+## X-Curse-Project-ID: 
+## X-Part-Of: Orbit
+## X-License: All Rights Reserved
+## X-Category: Interface Enhancements
+
+
+# Data
+Core\StatusData.lua
+
+# Core
+Core\StatusDock.lua
+
+# Widgets
+Widgets\WidgetManager.lua
+Widgets\Performance.lua
+Widgets\CombatTimer.lua
+Widgets\Time.lua
+Widgets\Gold.lua
+Widgets\Spec.lua
+Widgets\Durability.lua
+Widgets\BagSpace.lua
+Widgets\ItemLevel.lua
+Widgets\Location.lua
+Widgets\Coordinates.lua
+Widgets\Friends.lua
+Widgets\Guild.lua
