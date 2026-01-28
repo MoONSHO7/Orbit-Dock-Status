@@ -152,6 +152,10 @@ function DurabilityWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for durability updates
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Durability", {
@@ -159,10 +163,18 @@ function DurabilityWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateDurability() end,
+            onEnable = function(f)
+                -- Re-register durability event and update display
+                eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+                UpdateDurability()
+            end,
+            onDisable = function(f)
+                -- Unregister event to save resources
+                eventFrame:UnregisterEvent("UPDATE_INVENTORY_DURABILITY")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
     eventFrame:SetScript("OnEvent", UpdateDurability)
     

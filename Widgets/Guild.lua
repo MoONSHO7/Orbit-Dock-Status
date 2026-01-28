@@ -123,6 +123,10 @@ function GuildWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for guild updates
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Guild", {
@@ -130,10 +134,21 @@ function GuildWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateGuild() end,
+            onEnable = function(f)
+                -- Re-register guild events and update display
+                eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
+                eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
+                C_GuildInfo.GuildRoster()
+                UpdateGuild()
+            end,
+            onDisable = function(f)
+                -- Unregister events to save resources
+                eventFrame:UnregisterEvent("GUILD_ROSTER_UPDATE")
+                eventFrame:UnregisterEvent("PLAYER_GUILD_UPDATE")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("GUILD_ROSTER_UPDATE")
     eventFrame:RegisterEvent("PLAYER_GUILD_UPDATE")
     eventFrame:SetScript("OnEvent", UpdateGuild)

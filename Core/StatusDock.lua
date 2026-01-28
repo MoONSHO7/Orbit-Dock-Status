@@ -661,7 +661,25 @@ local function CreateDrawerPanel()
     end
     
     UpdateDrawerLayout()
+    
+    -- Enable/disable drawer widgets when drawer shows/hides to save resources
+    drawerPanel:SetScript("OnShow", function()
+        if addon.WidgetManager then
+            addon.WidgetManager:EnableDrawerWidgets()
+        end
+    end)
+    
+    drawerPanel:SetScript("OnHide", function()
+        if addon.WidgetManager then
+            addon.WidgetManager:DisableDrawerWidgets()
+        end
+    end)
+    
+    -- Drawer starts hidden, so disable drawer widgets initially
     drawerPanel:Hide()
+    if addon.WidgetManager then
+        addon.WidgetManager:DisableDrawerWidgets()
+    end
     
     return drawerPanel
 end

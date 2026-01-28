@@ -122,6 +122,10 @@ function GoldWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for money updates
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Gold", {
@@ -129,10 +133,18 @@ function GoldWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateGold() end,
+            onEnable = function(f)
+                -- Re-register money event and update display
+                eventFrame:RegisterEvent("PLAYER_MONEY")
+                UpdateGold()
+            end,
+            onDisable = function(f)
+                -- Unregister event to save resources
+                eventFrame:UnregisterEvent("PLAYER_MONEY")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_MONEY")
     eventFrame:SetScript("OnEvent", UpdateGold)
     

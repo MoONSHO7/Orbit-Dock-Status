@@ -25,7 +25,7 @@ local highlightedZone = nil
 
 --- Register a widget with the manager
 ---@param id string Unique widget identifier
----@param widgetData table Widget data: { frame, name, onDock, onUndock }
+---@param widgetData table Widget data: { frame, name, onDock, onUndock, onEnable, onDisable }
 function WidgetManager:Register(id, widgetData)
     if widgets[id] then return end
     
@@ -35,10 +35,55 @@ function WidgetManager:Register(id, widgetData)
         frame = widgetData.frame,
         onDock = widgetData.onDock,
         onUndock = widgetData.onUndock,
+        onEnable = widgetData.onEnable,
+        onDisable = widgetData.onDisable,
         isDocked = false,
         dockedSlot = nil,
+        isEnabled = true,  -- Widgets start enabled
     }
     table.insert(widgetOrder, id)
+end
+
+--- Enable a widget (start tickers, register events)
+---@param id string Widget ID
+function WidgetManager:EnableWidget(id)
+    local widget = widgets[id]
+    if not widget or widget.isEnabled then return end
+    
+    widget.isEnabled = true
+    if widget.onEnable then
+        widget.onEnable(widget.frame)
+    end
+end
+
+--- Disable a widget (stop tickers, unregister events)
+---@param id string Widget ID
+function WidgetManager:DisableWidget(id)
+    local widget = widgets[id]
+    if not widget or not widget.isEnabled then return end
+    
+    widget.isEnabled = false
+    if widget.onDisable then
+        widget.onDisable(widget.frame)
+    end
+end
+
+--- Enable all widgets currently in the drawer
+function WidgetManager:EnableDrawerWidgets()
+    for id, widget in pairs(widgets) do
+        if widget.isInDrawer then
+            self:EnableWidget(id)
+        end
+    end
+end
+
+--- Disable all widgets currently in the drawer
+function WidgetManager:DisableDrawerWidgets()
+    for id, widget in pairs(widgets) do
+        if widget.isInDrawer then
+            self:DisableWidget(id)
+        end
+    end
 end
 
 --- Get widget by ID

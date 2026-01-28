@@ -105,6 +105,10 @@ function ItemLevelWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for equipment changes
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("ItemLevel", {
@@ -112,10 +116,18 @@ function ItemLevelWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateItemLevel() end,
+            onEnable = function(f)
+                -- Re-register equipment event and update display
+                eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+                UpdateItemLevel()
+            end,
+            onDisable = function(f)
+                -- Unregister event to save resources
+                eventFrame:UnregisterEvent("PLAYER_EQUIPMENT_CHANGED")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
     eventFrame:SetScript("OnEvent", UpdateItemLevel)
     

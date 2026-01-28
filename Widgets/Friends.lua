@@ -123,6 +123,10 @@ function FriendsWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for friend list updates
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Friends", {
@@ -130,10 +134,20 @@ function FriendsWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateFriends() end,
+            onEnable = function(f)
+                -- Re-register friend list events and update display
+                eventFrame:RegisterEvent("FRIENDLIST_UPDATE")
+                eventFrame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
+                UpdateFriends()
+            end,
+            onDisable = function(f)
+                -- Unregister events to save resources
+                eventFrame:UnregisterEvent("FRIENDLIST_UPDATE")
+                eventFrame:UnregisterEvent("BN_FRIEND_INFO_CHANGED")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("FRIENDLIST_UPDATE")
     eventFrame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
     eventFrame:SetScript("OnEvent", UpdateFriends)

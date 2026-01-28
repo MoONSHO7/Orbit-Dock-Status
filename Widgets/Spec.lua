@@ -129,6 +129,10 @@ function SpecWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for spec changes
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Spec", {
@@ -136,10 +140,18 @@ function SpecWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateSpec() end,
+            onEnable = function(f)
+                -- Re-register spec event and update display
+                eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+                UpdateSpec()
+            end,
+            onDisable = function(f)
+                -- Unregister event to save resources
+                eventFrame:UnregisterEvent("PLAYER_SPECIALIZATION_CHANGED")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     eventFrame:SetScript("OnEvent", UpdateSpec)
     

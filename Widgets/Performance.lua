@@ -179,6 +179,17 @@ function PerformanceWidget:OnLoad()
                 -- Restore normal size
                 UpdateStats()
             end,
+            onEnable = function(f)
+                -- Resume stats ticker when drawer opens
+                StartLoop()
+            end,
+            onDisable = function(f)
+                -- Stop stats ticker when drawer closes to save resources
+                if timer then
+                    timer:Cancel()
+                    timer = nil
+                end
+            end,
         })
     end
     

@@ -177,6 +177,25 @@ function CombatTimerWidget:OnLoad()
                 -- Restore normal size
                 UpdateTimer()
             end,
+            onEnable = function(f)
+                -- Re-register combat events
+                if Orbit.EventBus then
+                    Orbit.EventBus:On("PLAYER_REGEN_DISABLED", CombatTimerWidget.PLAYER_REGEN_DISABLED, CombatTimerWidget)
+                    Orbit.EventBus:On("PLAYER_REGEN_ENABLED", CombatTimerWidget.PLAYER_REGEN_ENABLED, CombatTimerWidget)
+                end
+                -- Resume ticker if in combat
+                if inCombat then
+                    StartLoop()
+                end
+            end,
+            onDisable = function(f)
+                -- Stop ticker and unregister events to save resources
+                StopLoop()
+                if Orbit.EventBus then
+                    Orbit.EventBus:Off("PLAYER_REGEN_DISABLED", CombatTimerWidget.PLAYER_REGEN_DISABLED)
+                    Orbit.EventBus:Off("PLAYER_REGEN_ENABLED", CombatTimerWidget.PLAYER_REGEN_ENABLED)
+                end
+            end,
         })
     end
     

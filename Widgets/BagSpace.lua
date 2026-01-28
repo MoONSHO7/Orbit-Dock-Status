@@ -140,6 +140,10 @@ function BagSpaceWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for bag updates
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("BagSpace", {
@@ -147,10 +151,18 @@ function BagSpaceWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateBagSpace() end,
+            onEnable = function(f)
+                -- Re-register bag event and update display
+                eventFrame:RegisterEvent("BAG_UPDATE")
+                UpdateBagSpace()
+            end,
+            onDisable = function(f)
+                -- Unregister event to save resources
+                eventFrame:UnregisterEvent("BAG_UPDATE")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("BAG_UPDATE")
     eventFrame:SetScript("OnEvent", UpdateBagSpace)
     

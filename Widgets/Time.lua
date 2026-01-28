@@ -123,6 +123,17 @@ function TimeWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateTime() end,
+            onEnable = function(f)
+                -- Resume time ticker when drawer opens
+                StartLoop()
+            end,
+            onDisable = function(f)
+                -- Stop time ticker when drawer closes to save resources
+                if timer then
+                    timer:Cancel()
+                    timer = nil
+                end
+            end,
         })
     end
     

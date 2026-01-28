@@ -131,6 +131,10 @@ function LocationWidget:OnLoad()
     widgetFrame = CreateWidgetFrame()
     self.frame = widgetFrame
     
+    -- Create event frame for zone changes
+    local eventFrame = CreateFrame("Frame")
+    self.eventFrame = eventFrame
+    
     local WM = addon.WidgetManager
     if WM then
         WM:Register("Location", {
@@ -138,10 +142,22 @@ function LocationWidget:OnLoad()
             frame = widgetFrame,
             onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
             onUndock = function(f) UpdateLocation() end,
+            onEnable = function(f)
+                -- Re-register zone events and update display
+                eventFrame:RegisterEvent("ZONE_CHANGED")
+                eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
+                eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+                UpdateLocation()
+            end,
+            onDisable = function(f)
+                -- Unregister events to save resources
+                eventFrame:UnregisterEvent("ZONE_CHANGED")
+                eventFrame:UnregisterEvent("ZONE_CHANGED_INDOORS")
+                eventFrame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
+            end,
         })
     end
     
-    local eventFrame = CreateFrame("Frame")
     eventFrame:RegisterEvent("ZONE_CHANGED")
     eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
     eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
