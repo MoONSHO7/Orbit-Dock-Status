@@ -13,6 +13,13 @@ if not addon.BaseWidget then return end
 local DurabilityWidget = addon.BaseWidget:New("Durability")
 addon.DurabilityWidget = DurabilityWidget
 
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+DurabilityWidget.settings = {
+    autoRepair = true,
+    useGuild = true,
+}
+
 local SLOTS = {
     { slot = "HeadSlot", name = "Head" },
     { slot = "ShoulderSlot", name = "Shoulders" },
@@ -48,9 +55,6 @@ function DurabilityWidget:GetDurabilityInfo()
                 if pct < lowest then
                     lowest = pct
                 end
-
-                -- Calculate repair cost (requires visiting vendor or tooltip scanning,
-                -- but simplified we just track percentage for now)
             end
         end
     end
@@ -88,24 +92,62 @@ end
 -- [ AUTO REPAIR ] -------------------------------------------------------------
 
 function DurabilityWidget:TryAutoRepair()
-    if CanMerchantRepair() then
-        local cost = GetRepairAllCost()
-        if cost > 0 then
-            local money = GetMoney()
-            if money >= cost then
-                RepairAllItems()
-                local gold = math.floor(cost / 10000)
-                local silver = math.floor((cost % 10000) / 100)
-                local copper = cost % 100
-                print(string.format("|cff00ff00Auto-Repaired for %dg %ds %dc|r", gold, silver, copper))
-            else
-                print("|cffff0000Not enough money to auto-repair!|r")
-            end
+    if not self.settings.autoRepair then return end
+    if not CanMerchantRepair() then return end
+
+    local cost = GetRepairAllCost()
+    if cost <= 0 then return end
+
+    local money = GetMoney()
+    local repaired = false
+
+    -- Try Guild Repair
+    if self.settings.useGuild and IsInGuild() and CanGuildBankRepair() then
+        local guildMoney = GetGuildBankWithdrawMoney()
+        if guildMoney == -1 or guildMoney >= cost then
+            RepairAllItems(true)
+            repaired = true
+            print("|cff00ff00Auto-Repaired (Guild)|r")
         end
+    end
+
+    -- Fallback to Personal Repair
+    if not repaired and money >= cost then
+        RepairAllItems()
+        repaired = true
+        local gold = math.floor(cost / 10000)
+        local silver = math.floor((cost % 10000) / 100)
+        local copper = cost % 100
+        print(string.format("|cff00ff00Auto-Repaired for %dg %ds %dc|r", gold, silver, copper))
+    end
+
+    if not repaired then
+        print("|cffff0000Not enough money to auto-repair!|r")
     end
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
+
+function DurabilityWidget:OpenMenu()
+    if not addon.Menu then return end
+
+    local items = {
+        {
+            text = "Auto-Repair",
+            checked = self.settings.autoRepair,
+            func = function() self.settings.autoRepair = not self.settings.autoRepair end,
+            closeOnClick = false,
+        },
+        {
+            text = "Use Guild Funds",
+            checked = self.settings.useGuild,
+            func = function() self.settings.useGuild = not self.settings.useGuild end,
+            closeOnClick = false,
+        },
+    }
+
+    addon.Menu:Open(self.frame, items)
+end
 
 function DurabilityWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -133,13 +175,18 @@ function DurabilityWidget:ShowTooltip()
     end
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Character Info", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Character Info", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Settings", 0.7, 0.7, 0.7, 1, 1, 1)
 
     GameTooltip:Show()
 end
 
 function DurabilityWidget:OnClick(button)
-    ToggleCharacter("PaperDollFrame")
+    if button == "RightButton" then
+        self:OpenMenu()
+    else
+        ToggleCharacter("PaperDollFrame")
+    end
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------

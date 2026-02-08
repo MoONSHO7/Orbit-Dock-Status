@@ -23,12 +23,14 @@ Core\StatusDock.lua
 
 # Widgets
 Widgets\BaseWidget.lua
+Widgets\Menu.lua
 Widgets\WidgetManager.lua
-Widgets\LDB.lua
+Widgets\Volume.lua
 Widgets\Performance.lua
 Widgets\CombatTimer.lua
 Widgets\Time.lua
 Widgets\Gold.lua
+Widgets\Currency.lua
 Widgets\Spec.lua
 Widgets\Durability.lua
 Widgets\BagSpace.lua

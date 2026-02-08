@@ -1,6 +1,6 @@
 -- Gold.lua
 -- Currency display widget for StatusDock
--- Features: Session profit/loss tracking, smart formatting
+-- Features: Session profit/loss tracking, smart formatting, Auto-Sell Junk
 
 local _, addon = ...
 
@@ -56,6 +56,28 @@ function GoldWidget:Update()
     self:SetText(self:FormatMoney(money))
 end
 
+-- [ AUTO SELL JUNK ] ----------------------------------------------------------
+
+function GoldWidget:AutoSellJunk()
+    local profit = 0
+    for bag = 0, 4 do
+        for slot = 1, C_Container.GetContainerNumSlots(bag) do
+            local info = C_Container.GetContainerItemInfo(bag, slot)
+            if info and info.quality == 0 and not info.isLocked then
+                local price = select(11, GetItemInfo(info.hyperlink))
+                if price and price > 0 then
+                    C_Container.UseContainerItem(bag, slot)
+                    profit = profit + (price * info.stackCount)
+                end
+            end
+        end
+    end
+
+    if profit > 0 then
+        print(string.format("|cff00ff00Auto-Sold Junk for %s|r", self:FormatMoney(profit, false)))
+    end
+end
+
 -- [ INTERACTION ] -------------------------------------------------------------
 
 function GoldWidget:ShowTooltip()
@@ -106,6 +128,7 @@ function GoldWidget:OnLoad()
     -- Register events
     self:RegisterEvent("PLAYER_MONEY")
     self:RegisterEvent("PLAYER_ENTERING_WORLD") -- Ensure money is loaded
+    self:RegisterEvent("MERCHANT_SHOW", function() self:AutoSellJunk() end)
     
     -- Register with manager
     self:Register()

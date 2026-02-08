@@ -1,6 +1,6 @@
 -- Location.lua
 -- Advanced Location widget for StatusDock
--- Features: Zone tracking, PVP status coloring, Coordinates integration
+-- Features: Zone tracking, PVP status coloring, Coordinates, Fast Travel Menu
 
 local _, addon = ...
 
@@ -64,6 +64,46 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function LocationWidget:OpenTravelMenu()
+    if not addon.Menu then return end
+
+    local items = {}
+
+    -- Hearthstones & Toys
+    local toys = {
+        { id = 6948, name = "Hearthstone" },
+        { id = 110560, name = "Garrison Hearthstone" },
+        { id = 140192, name = "Dalaran Hearthstone" },
+        { id = 556, name = "Astral Recall" }, -- Shaman Spell (id check?)
+    }
+
+    for _, toy in ipairs(toys) do
+        if PlayerHasToy(toy.id) or GetItemCount(toy.id) > 0 then
+            local name, link, _, _, _, _, _, _, _, icon = GetItemInfo(toy.id)
+            if name then
+                table.insert(items, {
+                    text = string.format("|T%s:14|t %s", icon, name),
+                    func = function()
+                        -- Secure action requires complex handling or out of combat
+                        -- For now, just print helper or try UseItemByName if allowed
+                        if not InCombatLockdown() then
+                            UseItemByName(name)
+                        else
+                            print("Cannot use in combat")
+                        end
+                    end
+                })
+            end
+        end
+    end
+
+    if #items == 0 then
+        table.insert(items, { text = "No Travel Items Found", func = nil })
+    end
+
+    addon.Menu:Open(self.frame, items)
+end
+
 function LocationWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -90,15 +130,20 @@ function LocationWidget:ShowTooltip()
         GameTooltip:AddLine(" ")
         GameTooltip:AddDoubleLine("Coordinates:", string.format("%.2f, %.2f", x, y), 1, 1, 1, 1, 1, 1)
     end
-    
+
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Open World Map", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Open World Map", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Travel Menu", 0.7, 0.7, 0.7, 1, 1, 1)
 
     GameTooltip:Show()
 end
 
 function LocationWidget:OnClick(button)
-    ToggleWorldMap()
+    if button == "RightButton" then
+        self:OpenTravelMenu()
+    else
+        ToggleWorldMap()
+    end
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
