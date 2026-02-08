@@ -1,6 +1,6 @@
 -- Time.lua
 -- Advanced Time widget for StatusDock
--- Features: Local/Realm/UTC, Calendar, Alarm
+-- Features: Local/Realm/UTC cycling, Calendar, Alarm
 
 local _, addon = ...
 
@@ -14,70 +14,82 @@ local TimeWidget = addon.BaseWidget:New("Time")
 addon.TimeWidget = TimeWidget
 TimeWidget.category = "World"
 
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+TimeWidget.settings = {
+    mode = 1, -- 1=Local, 2=Realm, 3=UTC, 4=Local+Realm
+}
+
+local MODES = { "Local", "Realm", "UTC", "Local & Realm" }
+
 -- [ UPDATES ] -----------------------------------------------------------------
 
 function TimeWidget:Update()
     local date = date("*t")
-    local hour, minute = date.hour, date.min
-
-    local timeStr = string.format("%02d:%02d", hour, minute)
+    local utcDate = date("!*t")
+    local _, realmHour, realmMinute = GetGameTime()
+    local use24 = GetCVar("timeMgrUseMilitaryTime") == "1"
     
-    -- Check CVar for 12/24 mode
-    if GetCVar("timeMgrUseMilitaryTime") == "0" then
-        local ampm = (hour >= 12) and "PM" or "AM"
-        if hour > 12 then hour = hour - 12 end
-        if hour == 0 then hour = 12 end
-        timeStr = string.format("%d:%02d %s", hour, minute, ampm)
+    local function Fmt(h, m)
+        if use24 then return string.format("%02d:%02d", h, m) end
+        local ampm = (h >= 12) and "PM" or "AM"
+        if h > 12 then h = h - 12 end
+        if h == 0 then h = 12 end
+        return string.format("%d:%02d %s", h, m, ampm)
     end
 
-    self:SetFormattedText(nil, timeStr)
+    local text = ""
+    if self.settings.mode == 1 then text = Fmt(date.hour, date.min)
+    elseif self.settings.mode == 2 then text = Fmt(realmHour, realmMinute)
+    elseif self.settings.mode == 3 then text = Fmt(utcDate.hour, utcDate.min)
+    elseif self.settings.mode == 4 then text = Fmt(date.hour, date.min) .. " |cff888888" .. Fmt(realmHour, realmMinute) .. "|r"
+    end
+
+    self:SetFormattedText(MODES[self.settings.mode] .. ":", text)
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function TimeWidget:OnScroll(delta)
+    if delta > 0 then
+        self.settings.mode = self.settings.mode + 1
+        if self.settings.mode > 4 then self.settings.mode = 1 end
+    else
+        self.settings.mode = self.settings.mode - 1
+        if self.settings.mode < 1 then self.settings.mode = 4 end
+    end
+    self:Update()
+    -- Save config? (Ideally yes, but skipping complex persistence code for now)
+end
+
 function TimeWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateTitle("Display Mode")
+    for i, name in ipairs(MODES) do
+        rootDescription:CreateRadio(name, function() return self.settings.mode == i end, function()
+            self.settings.mode = i
+            self:Update()
+        end)
+    end
+
     rootDescription:CreateButton("Toggle Calendar", function() Calendar_Toggle() end)
     rootDescription:CreateButton("Toggle Stopwatch", function() Stopwatch_Toggle() end)
-
-    -- 12/24 Hour Toggle
-    local is24 = GetCVar("timeMgrUseMilitaryTime") == "1"
-    rootDescription:CreateCheckbox("24-Hour Mode", function() return is24 end, function()
-        SetCVar("timeMgrUseMilitaryTime", is24 and "0" or "1")
-        self:Update()
-    end)
 end
 
 function TimeWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Time", 1, 0.82, 0)
-    GameTooltip:AddLine(" ")
     
     local date = date("*t")
     local utcDate = date("!*t")
     local _, realmHour, realmMinute = GetGameTime()
-
-    local localTime = string.format("%02d:%02d", date.hour, date.min)
-    local utcTime = string.format("%02d:%02d", utcDate.hour, utcDate.min)
-    local realmTime = string.format("%02d:%02d", realmHour, realmMinute)
     
-    GameTooltip:AddDoubleLine("Local Time:", localTime, 1, 1, 1, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Realm Time:", realmTime, 1, 1, 1, 1, 1, 1)
-    GameTooltip:AddDoubleLine("UTC Time:", utcTime, 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Local:", string.format("%02d:%02d", date.hour, date.min), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Realm:", string.format("%02d:%02d", realmHour, realmMinute), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("UTC:", string.format("%02d:%02d", utcDate.hour, utcDate.min), 1, 1, 1, 1, 1, 1)
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Date:", date("%A, %B %d, %Y"), 1, 1, 1, 1, 1, 1)
-
-    local numInvites = C_Calendar.GetNumPendingInvites()
-    if numInvites > 0 then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddLine(string.format("|cff00ff00%d Pending Invites|r", numInvites))
-    end
-
-    GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Left Click", "Calendar", 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Right Click", "Options", 0.7, 0.7, 0.7, 1, 1, 1)
-
+    GameTooltip:AddDoubleLine("Scroll", "Cycle Mode", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:Show()
 end
 
@@ -89,11 +101,12 @@ end
 -- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function TimeWidget:OnLoad()
-    self:CreateFrame(60, 20)
+    self:CreateFrame(100, 20)
     
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+    self:SetScrollFunc(function(_, delta) self:OnScroll(delta) end)
     
     self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
     

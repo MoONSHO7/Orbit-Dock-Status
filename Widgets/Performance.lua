@@ -1,6 +1,6 @@
 -- Performance.lua
 -- System performance widget for StatusDock
--- Features: FPS, Latency, Memory Usage, Graph Visualization
+-- Features: FPS, Latency, Memory Usage, Graph Visualization, Scroll Modes
 
 local _, addon = ...
 
@@ -10,8 +10,9 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local PerformanceWidget = addon.BaseWidget:New("Performance"); addon.PerformanceWidget.category = "System"
+local PerformanceWidget = addon.BaseWidget:New("Performance")
 addon.PerformanceWidget = PerformanceWidget
+PerformanceWidget.category = "System"
 
 -- [ CONSTANTS ] ---------------------------------------------------------------
 
@@ -20,6 +21,13 @@ local COLORS = {
     YELLOW = { r = 1, g = 0.8, b = 0, a = 1 },
     RED = { r = 1, g = 0, b = 0, a = 1 },
 }
+
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+PerformanceWidget.settings = {
+    mode = 1, -- 1=FPS+MS, 2=FPS, 3=MS, 4=Memory
+}
+local MODES = { "FPS & MS", "FPS Only", "Latency Only", "Memory" }
 
 -- [ HISTORY ] -----------------------------------------------------------------
 
@@ -34,9 +42,9 @@ local HISTORY_SIZE = 60
 
 function PerformanceWidget:GetColorHex(value, threshold1, threshold2, reverse)
     if reverse then
-        if value >= threshold2 then return "|cff00ff00" -- Green
-        elseif value >= threshold1 then return "|cfffea300" -- Yellow
-        else return "|cffff0000" -- Red
+        if value >= threshold2 then return "|cff00ff00"
+        elseif value >= threshold1 then return "|cfffea300"
+        else return "|cffff0000"
         end
     else
         if value <= threshold1 then return "|cff00ff00"
@@ -52,22 +60,27 @@ function PerformanceWidget:Update()
     local fps = GetFramerate()
     local _, _, home, world = GetNetStats()
     UpdateAddOnMemoryUsage()
-    local mem = collectgarbage("count") / 1024 -- MB
+    local mem = collectgarbage("count") / 1024
     
-    -- Store history
     table.insert(self.history.fps, fps)
     if #self.history.fps > HISTORY_SIZE then table.remove(self.history.fps, 1) end
-
     table.insert(self.history.latency, world)
     if #self.history.latency > HISTORY_SIZE then table.remove(self.history.latency, 1) end
-
     table.insert(self.history.memory, mem)
     if #self.history.memory > HISTORY_SIZE then table.remove(self.history.memory, 1) end
     
     local fpsColor = self:GetColorHex(fps, 30, 60, true)
     local msColor = self:GetColorHex(world, 100, 200, false)
 
-    self:SetFormattedText(nil, string.format("%s%d|rfps %s%d|rms", fpsColor, math.floor(fps), msColor, world))
+    if self.settings.mode == 1 then
+        self:SetFormattedText(nil, string.format("%s%d|rfps %s%d|rms", fpsColor, math.floor(fps), msColor, world))
+    elseif self.settings.mode == 2 then
+        self:SetFormattedText("FPS:", string.format("%s%d|r", fpsColor, math.floor(fps)))
+    elseif self.settings.mode == 3 then
+        self:SetFormattedText("MS:", string.format("%s%d|r", msColor, world))
+    elseif self.settings.mode == 4 then
+        self:SetFormattedText("Mem:", string.format("%.1f MB", mem))
+    end
 end
 
 function PerformanceWidget:OnEnable()
@@ -81,7 +94,26 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function PerformanceWidget:OnScroll(delta)
+    if delta > 0 then
+        self.settings.mode = self.settings.mode + 1
+        if self.settings.mode > 4 then self.settings.mode = 1 end
+    else
+        self.settings.mode = self.settings.mode - 1
+        if self.settings.mode < 1 then self.settings.mode = 4 end
+    end
+    self:Update()
+end
+
 function PerformanceWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateTitle("Display Mode")
+    for i, name in ipairs(MODES) do
+        rootDescription:CreateRadio(name, function() return self.settings.mode == i end, function()
+            self.settings.mode = i
+            self:Update()
+        end)
+    end
+
     rootDescription:CreateButton("Collect Garbage", function()
         collectgarbage("collect")
         print("|cff00ff00Memory Garbage Collected|r")
@@ -93,7 +125,6 @@ function PerformanceWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("System Performance", 1, 0.82, 0)
-    GameTooltip:AddLine(" ")
 
     local fps = GetFramerate()
     local _, _, home, world = GetNetStats()
@@ -111,49 +142,48 @@ function PerformanceWidget:ShowTooltip()
     for i = 1, GetNumAddOns() do
         local m = GetAddOnMemoryUsage(i)
         local name, title = GetAddOnInfo(i)
-        if m > 0 then
-            table.insert(addons, { name = title or name, mem = m })
-        end
+        if m > 0 then table.insert(addons, { name = title or name, mem = m }) end
     end
-    
     table.sort(addons, function(a, b) return a.mem > b.mem end)
 
     for i = 1, 5 do
         if addons[i] then
             local memStr
-            if addons[i].mem > 1000 then
-                memStr = string.format("%.2f MB", addons[i].mem / 1000)
-            else
-                memStr = string.format("%.0f KB", addons[i].mem)
-            end
+            if addons[i].mem > 1000 then memStr = string.format("%.2f MB", addons[i].mem / 1000)
+            else memStr = string.format("%.0f KB", addons[i].mem) end
             GameTooltip:AddDoubleLine(addons[i].name, memStr, 1, 1, 1, 1, 1, 1)
         end
     end
 
     GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("Scroll", "Cycle Mode", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:AddDoubleLine("Click", "Collect Garbage", 0.7, 0.7, 0.7, 1, 1, 1)
     
     GameTooltip:Show()
 
-    -- Draw Graph (FPS)
-    if #self.history.fps > 2 then
-        if not self.graphFrame then
-            self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
-            self.graphFrame:SetSize(220, 60)
-            self.graph = addon.Graph:New(self.graphFrame, 220, 60)
-        end
-
-        self.graphFrame:SetParent(GameTooltip)
-        self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
-        self.graphFrame:Show()
-
-        self.graph:Clear()
-        self.graph:SetColor(COLORS.GREEN)
-        for _, val in ipairs(self.history.fps) do
-            self.graph:AddData(val)
-        end
-        self.graph:Draw()
+    -- Draw Graph (Based on Mode)
+    if not self.graphFrame then
+        self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
+        self.graphFrame:SetSize(220, 60)
+        self.graph = addon.Graph:New(self.graphFrame, 220, 60)
     end
+    self.graphFrame:SetParent(GameTooltip)
+    self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
+    self.graphFrame:Show()
+
+    self.graph:Clear()
+
+    if self.settings.mode == 4 then
+        self.graph:SetColor(0, 0.7, 1, 1) -- Blue for Mem
+        for _, val in ipairs(self.history.memory) do self.graph:AddData(val) end
+    elseif self.settings.mode == 3 then
+        self.graph:SetColor(1, 0.5, 0, 1) -- Orange for Latency
+        for _, val in ipairs(self.history.latency) do self.graph:AddData(val) end
+    else
+        self.graph:SetColor(0, 1, 0, 1) -- Green for FPS
+        for _, val in ipairs(self.history.fps) do self.graph:AddData(val) end
+    end
+    self.graph:Draw()
 end
 
 function PerformanceWidget:OnClick(button)
@@ -169,6 +199,7 @@ function PerformanceWidget:OnLoad()
     
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+    self:SetScrollFunc(function(_, delta) self:OnScroll(delta) end)
 
     self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
 

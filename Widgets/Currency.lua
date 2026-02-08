@@ -1,6 +1,6 @@
 -- Currency.lua
 -- Advanced Currency widget for StatusDock
--- Features: Configurable tracking, weekly caps, Warband Transfer support
+-- Features: Configurable tracking, weekly caps, Scroll Cycling
 
 local _, addon = ...
 
@@ -10,17 +10,21 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local CurrencyWidget = addon.BaseWidget:New("Currency"); addon.CurrencyWidget.category = "Economy"
+local CurrencyWidget = addon.BaseWidget:New("Currency")
 addon.CurrencyWidget = CurrencyWidget
+CurrencyWidget.category = "Economy"
 
--- [ CONSTANTS ] ---------------------------------------------------------------
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+CurrencyWidget.settings = {
+    currentIndex = 1,
+}
 
 local TRACKED_CURRENCIES = {
     1602, -- Conquest
     1191, -- Valor
     490,  -- Honor
     515,  -- Darkmoon Prize Ticket
-    1129, -- Seal of Tempered Fate (Legacy)
     1166, -- Timewarped Badge
     1220, -- Order Resources
     1553, -- Azerite
@@ -31,42 +35,55 @@ local TRACKED_CURRENCIES = {
     2707, -- Drake's Dreaming Crest
     2708, -- Wyrm's Dreaming Crest
     2709, -- Aspect's Dreaming Crest
-    2777, -- Renascent Dream (Catalyst)
+    2777, -- Renascent Dream
 }
 
 -- [ HELPER ] ------------------------------------------------------------------
 
 function CurrencyWidget:GetCurrencyInfo(id)
-    local info = C_CurrencyInfo.GetCurrencyInfo(id)
-    if not info then return nil end
-    return info
+    return C_CurrencyInfo.GetCurrencyInfo(id)
 end
 
 -- [ UPDATE ] ------------------------------------------------------------------
 
 function CurrencyWidget:Update()
-    local primaryID = 2245 -- Flightstones
-    local secondaryID = 1602 -- Conquest
+    local id = TRACKED_CURRENCIES[self.settings.currentIndex]
+    if not id then id = TRACKED_CURRENCIES[1] end
 
-    local info1 = self:GetCurrencyInfo(primaryID)
-    local info2 = self:GetCurrencyInfo(secondaryID)
-
-    local text = ""
-    if info1 and info1.quantity > 0 then
-        text = string.format("|T%s:14|t %d", info1.iconFileID, info1.quantity)
+    local info = self:GetCurrencyInfo(id)
+    if info then
+        -- Icon + Amount
+        self:SetFormattedText(nil, string.format("|T%s:14|t %d", info.iconFileID, info.quantity))
+    else
+        self:SetFormattedText("Currency:", "Unknown")
     end
-    if info2 and info2.quantity > 0 then
-        if text ~= "" then text = text .. "  " end
-        text = text .. string.format("|T%s:14|t %d", info2.iconFileID, info2.quantity)
-    end
-    if text == "" then text = "Currency" end
-
-    self:SetFormattedText(nil, text)
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function CurrencyWidget:OnScroll(delta)
+    if delta < 0 then
+        self.settings.currentIndex = self.settings.currentIndex + 1
+        if self.settings.currentIndex > #TRACKED_CURRENCIES then self.settings.currentIndex = 1 end
+    else
+        self.settings.currentIndex = self.settings.currentIndex - 1
+        if self.settings.currentIndex < 1 then self.settings.currentIndex = #TRACKED_CURRENCIES end
+    end
+    self:Update()
+end
+
 function CurrencyWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateTitle("Tracked Currency")
+    for i, id in ipairs(TRACKED_CURRENCIES) do
+        local info = self:GetCurrencyInfo(id)
+        if info then
+            rootDescription:CreateRadio(string.format("|T%s:14|t %s", info.iconFileID, info.name), function() return self.settings.currentIndex == i end, function()
+                self.settings.currentIndex = i
+                self:Update()
+            end)
+        end
+    end
+
     rootDescription:CreateButton("Open Currency Tab", function() ToggleCharacter("TokenFrame") end)
 end
 
@@ -76,23 +93,26 @@ function CurrencyWidget:ShowTooltip()
     GameTooltip:AddLine("Currencies", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
 
-    for _, id in ipairs(TRACKED_CURRENCIES) do
+    for i, id in ipairs(TRACKED_CURRENCIES) do
         local info = self:GetCurrencyInfo(id)
         if info and (info.quantity > 0 or info.maxQuantity > 0) then
             local countStr = tostring(info.quantity)
             if info.maxQuantity > 0 then
                 countStr = string.format("%d / %d", info.quantity, info.maxQuantity)
             end
-            if info.maxWeeklyQuantity > 0 then
-                countStr = countStr .. string.format(" (Week: %d/%d)", info.quantityEarnedThisWeek or 0, info.maxWeeklyQuantity)
+
+            -- Highlight selected
+            local label = string.format("|T%s:14|t %s", info.iconFileID, info.name)
+            if i == self.settings.currentIndex then
+                label = "|cff00ff00>|r " .. label
             end
 
-            GameTooltip:AddDoubleLine(string.format("|T%s:14|t %s", info.iconFileID, info.name), countStr, 1, 1, 1, 1, 1, 1)
+            GameTooltip:AddDoubleLine(label, countStr, 1, 1, 1, 1, 1, 1)
         end
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Left Click", "Currency Tab", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Scroll", "Cycle Currency", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:Show()
 end
 
@@ -108,6 +128,7 @@ function CurrencyWidget:OnLoad()
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+    self:SetScrollFunc(function(_, delta) self:OnScroll(delta) end)
 
     self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
 

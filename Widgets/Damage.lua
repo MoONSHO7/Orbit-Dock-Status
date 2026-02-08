@@ -1,6 +1,6 @@
 -- Damage.lua
 -- Advanced Damage Meter widget for StatusDock
--- Features: Lightweight DPS/HPS tracking, Combat Graph, Top Damagers display
+-- Features: Lightweight DPS/HPS tracking, Combat Graph, Top Damagers display, Scroll Modes
 
 local _, addon = ...
 
@@ -10,13 +10,14 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local DamageWidget = addon.BaseWidget:New("Damage"); addon.DamageWidget.category = "Combat"
+local DamageWidget = addon.BaseWidget:New("Damage")
 addon.DamageWidget = DamageWidget
+DamageWidget.category = "Combat"
 
 -- [ SETTINGS ] ----------------------------------------------------------------
 
 DamageWidget.settings = {
-    mode = "DPS",
+    mode = "DPS", -- "DPS" or "HPS"
     resetOnCombat = true,
 }
 
@@ -87,14 +88,44 @@ end
 -- [ INTERACTION ] -------------------------------------------------------------
 
 function DamageWidget:GenerateMenu(owner, rootDescription)
-    rootDescription:CreateRadio("Show DPS", function() return self.settings.mode == "DPS" end, function()
+    rootDescription:CreateTitle("Display Mode")
+    rootDescription:CreateRadio("DPS", function() return self.settings.mode == "DPS" end, function()
         self.settings.mode = "DPS"
         self:Update()
     end)
-
-    rootDescription:CreateRadio("Show HPS", function() return self.settings.mode == "HPS" end, function()
+    rootDescription:CreateRadio("HPS", function() return self.settings.mode == "HPS" end, function()
         self.settings.mode = "HPS"
         self:Update()
+    end)
+
+    -- Group Breakdown
+    rootDescription:CreateTitle("Group " .. self.settings.mode)
+    local list = {}
+    local source = (self.settings.mode == "DPS") and self.currentSegment.damage or self.currentSegment.healing
+    local duration = math.max(1, self.currentSegment.active and (GetTime() - self.currentSegment.startTime) or (self.currentSegment.endTime - self.currentSegment.startTime))
+
+    for name, val in pairs(source) do table.insert(list, { name = name, val = val }) end
+    table.sort(list, function(a, b) return a.val > b.val end)
+
+    for i = 1, math.min(10, #list) do
+        local entry = list[i]
+        local perSec = entry.val / duration
+        rootDescription:CreateButton(string.format("%d. %s: %s", i, entry.name, FormatNumber(perSec)), function() end)
+    end
+
+    rootDescription:CreateButton("Report to Group", function()
+        local channel = IsInRaid() and "RAID" or IsInGroup() and "PARTY" or "SAY"
+        SendChatMessage("Orbit Status: Top " .. self.settings.mode, channel)
+        for i = 1, math.min(5, #list) do
+            local entry = list[i]
+            local perSec = entry.val / duration
+            SendChatMessage(string.format("%d. %s: %s", i, entry.name, FormatNumber(perSec)), channel)
+        end
+    end)
+
+    rootDescription:CreateTitle("Options")
+    rootDescription:CreateCheckbox("Reset on Combat", function() return self.settings.resetOnCombat end, function()
+        self.settings.resetOnCombat = not self.settings.resetOnCombat
     end)
 
     rootDescription:CreateButton("Reset Data", function()
@@ -102,6 +133,15 @@ function DamageWidget:GenerateMenu(owner, rootDescription)
         self.history = {}
         self:Update()
     end)
+end
+
+function DamageWidget:OnScroll(delta)
+    if delta > 0 then
+        self.settings.mode = "DPS"
+    else
+        self.settings.mode = "HPS"
+    end
+    self:Update()
 end
 
 function DamageWidget:ShowTooltip()
@@ -115,17 +155,20 @@ function DamageWidget:ShowTooltip()
     local list = {}
     local source = (self.settings.mode == "DPS") and self.currentSegment.damage or self.currentSegment.healing
     local total = (self.settings.mode == "DPS") and self.currentSegment.totalDamage or self.currentSegment.totalHealing
+    if total == 0 then total = 1 end
 
     for name, val in pairs(source) do table.insert(list, { name = name, val = val }) end
     table.sort(list, function(a, b) return a.val > b.val end)
 
     for i = 1, math.min(10, #list) do
         local entry = list[i]
-        GameTooltip:AddDoubleLine(string.format("%d. %s", i, entry.name), string.format("%s (%.1f%%)", FormatNumber(entry.val/duration), (entry.val/total)*100), 1, 1, 1, 1, 1, 1)
+        local pct = (entry.val / total) * 100
+        GameTooltip:AddDoubleLine(string.format("%d. %s", i, entry.name), string.format("%s (%.1f%%)", FormatNumber(entry.val/duration), pct), 1, 1, 1, 1, 1, 1)
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Right Click", "Options", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Scroll", "Cycle DPS/HPS", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Menu / Report", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:Show()
 
     -- Graph
@@ -140,7 +183,6 @@ function DamageWidget:ShowTooltip()
         self.graphFrame:Show()
 
         self.graph:Clear()
-        -- Class Color for graph line
         local _, class = UnitClass("player")
         local color = C_ClassColor.GetClassColor(class)
         self.graph:SetColor(color.r, color.g, color.b, 1)
@@ -151,7 +193,7 @@ function DamageWidget:ShowTooltip()
 end
 
 function DamageWidget:OnClick(button)
-    -- Toggle mode or reset
+    -- Left click?
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
@@ -161,6 +203,7 @@ function DamageWidget:OnLoad()
 
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+    self:SetScrollFunc(function(_, delta) self:OnScroll(delta) end)
 
     self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
 

@@ -27,6 +27,7 @@ function BaseWidget:New(name)
     instance.tooltipFunc = nil
     instance.updateFunc = nil
     instance.clickFunc = nil
+    instance.scrollFunc = nil
     instance.menuGenerator = nil -- Function(owner, rootDescription)
     instance.inEditMode = false
     return instance
@@ -77,6 +78,7 @@ function BaseWidget:CreateFrame(width, height)
     f:SetScript("OnDragStart", function() self:OnDragStart() end)
     f:SetScript("OnDragStop", function() self:OnDragStop() end)
     f:SetScript("OnMouseUp", function(_, button) self:OnClick(button) end)
+    f:SetScript("OnMouseWheel", function(_, delta) self:OnScroll(delta) end)
 
     self.frame = f
     return f
@@ -167,6 +169,10 @@ end
 function BaseWidget:SetUpdateFunc(func) self.updateFunc = func end
 function BaseWidget:SetTooltipFunc(func) self.tooltipFunc = func end
 function BaseWidget:SetClickFunc(func) self.clickFunc = func end
+function BaseWidget:SetScrollFunc(func)
+    self.scrollFunc = func
+    if self.frame then self.frame:EnableMouseWheel(true) end
+end
 
 function BaseWidget:RegisterEvent(event, handler)
     self.events[event] = handler or self.updateFunc
@@ -246,6 +252,10 @@ function BaseWidget:OnClick(button)
     end
 
     if self.clickFunc then self.clickFunc(self, button) end
+end
+
+function BaseWidget:OnScroll(delta)
+    if self.scrollFunc then self.scrollFunc(self, delta) end
 end
 
 -- [ MENUS ] -------------------------------------------------------------------
