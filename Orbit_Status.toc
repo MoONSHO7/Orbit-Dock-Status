@@ -24,6 +24,7 @@ Core\StatusDock.lua
 # Widgets
 Widgets\WidgetManager.lua
 Widgets\Performance.lua
+Widgets\Damage.lua
 Widgets\CombatTimer.lua
 Widgets\Time.lua
 Widgets\Gold.lua
