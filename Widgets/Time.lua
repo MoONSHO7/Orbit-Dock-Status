@@ -1,5 +1,6 @@
 -- Time.lua
--- Real-world clock widget for StatusDock
+-- Advanced Time widget for StatusDock
+-- Features: Local/Realm/UTC, Calendar, Alarm
 
 local _, addon = ...
 
@@ -7,142 +8,111 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local TimeWidget = {}
+if not addon.BaseWidget then return end
+
+local TimeWidget = addon.BaseWidget:New("Time")
 addon.TimeWidget = TimeWidget
 
-local widgetFrame = nil
-local timer = nil
+-- [ CONSTANTS ] ---------------------------------------------------------------
 
-local function UpdateTime()
-    if not widgetFrame or not widgetFrame:IsVisible() then return end
+local COLORS = {
+    WHITE = "|cffffffff",
+    GREY = "|cff888888",
+    GOLD = "|cffffd700",
+}
+
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function TimeWidget:Update()
+    local date = date("*t")
+    local hour, minute = date.hour, date.min
     
-    local timeString = date("%H:%M")
-    widgetFrame.Text:SetText(timeString)
+    -- Format: HH:MM
+    local timeStr = string.format("%02d:%02d", hour, minute)
     
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 10, 20)
+    -- Add AM/PM if 12h format (Orbit Settings or CVar check)
+    local use24 = GetCVar("timeMgrUseMilitaryTime") == "1"
+    if not use24 then
+        local ampm = (hour >= 12) and "PM" or "AM"
+        if hour > 12 then hour = hour - 12 end
+        if hour == 0 then hour = 12 end
+        timeStr = string.format("%d:%02d %s", hour, minute, ampm)
+    end
+
+    self:SetText(COLORS.WHITE .. timeStr)
 end
 
-local function StartLoop()
-    if timer then timer:Cancel() end
-    timer = C_Timer.NewTicker(10, UpdateTime)
-    UpdateTime()
-end
+-- [ INTERACTION ] -------------------------------------------------------------
 
-local function ShowTooltip(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+function TimeWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Time", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
     
-    -- Local time
-    GameTooltip:AddDoubleLine("Local Time:", date("%H:%M:%S"), 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Date:", date("%A, %B %d"), 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
+    local date = date("*t")
+    local localTime = string.format("%02d:%02d", date.hour, date.min)
+    local utcDate = date("!*t")
+    local utcTime = string.format("%02d:%02d", utcDate.hour, utcDate.min)
+    local _, realmHour, realmMinute = GetGameTime()
+    local realmTime = string.format("%02d:%02d", realmHour, realmMinute)
     
-    -- Server time
-    local serverHour, serverMin = GetGameTime()
-    GameTooltip:AddDoubleLine("Server Time:", string.format("%02d:%02d", serverHour, serverMin), 0.7, 0.7, 0.7, 0.6, 0.8, 1)
+    GameTooltip:AddDoubleLine("Local Time:", localTime, 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Realm Time:", realmTime, 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("UTC Time:", utcTime, 1, 1, 1, 1, 1, 1)
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Open Calendar", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Date:", date("%A, %B %d, %Y"), 1, 1, 1, 1, 1, 1)
+
+    -- Check for Calendar Invites
+    local numInvites = C_Calendar.GetNumPendingInvites()
+    if numInvites > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine(string.format("|cff00ff00%d Pending Invites|r", numInvites))
+    end
+
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("Left Click", "Calendar", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Stopwatch", 0.7, 0.7, 0.7, 1, 1, 1)
+
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+function TimeWidget:OnClick(button)
+    if button == "LeftButton" then
+        if not CalendarFrame then LoadAddOn("Blizzard_Calendar") end
+        Calendar_Toggle()
+    elseif button == "RightButton" then
+        Stopwatch_Toggle()
+    end
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusTimeWidget", UIParent)
-    f:SetSize(50, 20)
-    f:SetClampedToScreen(true)
-    f.editModeName = "Time"
-    
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = 12 })
-    end
-    
-    -- No default position - WidgetManager places in drawer
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", ShowTooltip)
-    f:SetScript("OnLeave", HideTooltip)
-    
-    -- Click to open calendar
-    f:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and not self.isDragging then
-            ToggleCalendar()
-        end
-    end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WM = addon.WidgetManager
-        if not WM or not WM:OnWidgetDragStart("Time") then
-            return  -- Block drag if drawer isn't open
-        end
-        self.isDragging = true
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")
-        self:StartMoving()
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM2 = addon.WidgetManager
-                if WM2 then WM2:OnWidgetDragUpdate() end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self.isDragging = false
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        local WM = addon.WidgetManager
-        if WM then WM:OnWidgetDragStop("Time") end
-    end)
-    
-    f:RegisterForDrag("LeftButton")
-    return f
-end
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function TimeWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(60, 20)
     
-    local WM = addon.WidgetManager
-    if WM then
-        WM:Register("Time", {
-            name = "Time",
-            frame = widgetFrame,
-            onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
-            onUndock = function(f) UpdateTime() end,
-            onEnable = function(f)
-                -- Resume time ticker when drawer opens
-                StartLoop()
-            end,
-            onDisable = function(f)
-                -- Stop time ticker when drawer closes to save resources
-                if timer then
-                    timer:Cancel()
-                    timer = nil
-                end
-            end,
-        })
-    end
+    -- Setup handlers
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    StartLoop()
-    widgetFrame:Show()
+    -- Periodic update (every second to catch minute changes precisely)
+    self:SetUpdateFunc(function() self:Update() end)
+    C_Timer.NewTicker(1, function() self:Update() end)
+    
+    -- Register events
+    self:RegisterEvent("CALENDAR_UPDATE_PENDING_INVITES")
+    
+    -- Register with manager
+    self:Register()
+    
+    -- Initial update
+    self:Update()
 end
 
+-- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    C_Timer.After(0.5, function() TimeWidget:OnLoad() end)
+    C_Timer.After(1, function() TimeWidget:OnLoad() end)
 end)

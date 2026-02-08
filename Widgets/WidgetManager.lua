@@ -23,6 +23,15 @@ local highlightedZone = nil
 
 -- [ REGISTRATION ] ------------------------------------------------------------
 
+--- Create and register a new widget using BaseWidget
+---@param name string Widget name
+---@return table The new widget instance
+function WidgetManager:CreateWidget(name)
+    if not addon.BaseWidget then return nil end
+    local widget = addon.BaseWidget:New(name)
+    return widget
+end
+
 --- Register a widget with the manager
 ---@param id string Unique widget identifier
 ---@param widgetData table Widget data: { frame, name, onDock, onUndock, onEnable, onDisable }

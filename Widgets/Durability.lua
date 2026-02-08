@@ -1,5 +1,6 @@
 -- Durability.lua
 -- Armor durability widget for StatusDock
+-- Features: Auto-repair, smart hiding, gradient coloring
 
 local _, addon = ...
 
@@ -7,10 +8,17 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local DurabilityWidget = {}
+if not addon.BaseWidget then return end
+
+local DurabilityWidget = addon.BaseWidget:New("Durability")
 addon.DurabilityWidget = DurabilityWidget
 
-local widgetFrame = nil
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+DurabilityWidget.settings = {
+    autoRepair = true,
+    useGuild = true,
+}
 
 local SLOTS = {
     { slot = "HeadSlot", name = "Head" },
@@ -25,18 +33,28 @@ local SLOTS = {
     { slot = "SecondaryHandSlot", name = "Off Hand" },
 }
 
-local function GetDurabilityInfo()
+-- [ HELPER FUNCTIONS ] --------------------------------------------------------
+
+function DurabilityWidget:GetDurabilityInfo()
     local lowest = 100
     local slotInfo = {}
+    local totalRepairCost = 0
     
     for _, info in ipairs(SLOTS) do
         local slotId = GetInventorySlotInfo(info.slot)
-        local current, maximum = GetInventoryItemDurability(slotId)
-        if current and maximum and maximum > 0 then
-            local pct = (current / maximum) * 100
-            table.insert(slotInfo, { name = info.name, pct = pct, current = current, max = maximum })
-            if pct < lowest then
-                lowest = pct
+        if slotId then
+            local current, maximum = GetInventoryItemDurability(slotId)
+            if current and maximum and maximum > 0 then
+                local pct = (current / maximum) * 100
+                table.insert(slotInfo, {
+                    name = info.name,
+                    pct = pct,
+                    current = current,
+                    max = maximum
+                })
+                if pct < lowest then
+                    lowest = pct
+                end
             end
         end
     end
@@ -44,144 +62,155 @@ local function GetDurabilityInfo()
     return lowest, slotInfo
 end
 
-local function UpdateDurability()
-    if not widgetFrame then return end
-    
-    local durability = GetDurabilityInfo()
-    local color = "|cff00ff00"
-    if durability < 25 then
-        color = "|cffff0000"
-    elseif durability < 50 then
-        color = "|cfffea300"
+function DurabilityWidget:GetColor(pct)
+    if pct <= 20 then
+        return "|cffff0000" -- Red
+    elseif pct <= 50 then
+        return "|cffffa500" -- Orange
+    elseif pct < 100 then
+        return "|cffffffff" -- White
+    else
+        return "|cff00ff00" -- Green (only for tooltip)
     end
-    
-    widgetFrame.Text:SetText(string.format("%s%d%%|r Dur", color, durability))
-    
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 10, 20)
 end
 
-local function ShowTooltip(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function DurabilityWidget:Update()
+    local lowest, _ = self:GetDurabilityInfo()
+    local color = self:GetColor(lowest)
+    
+    -- Contextual Visibility: Hide if 100% and not in Edit Mode
+    if lowest >= 100 and not self.inEditMode then
+        self.frame:Hide()
+    else
+        self.frame:Show()
+        self:SetText(string.format("%s%d%%|r Dur", color, lowest))
+    end
+end
+
+-- [ AUTO REPAIR ] -------------------------------------------------------------
+
+function DurabilityWidget:TryAutoRepair()
+    if not self.settings.autoRepair then return end
+    if not CanMerchantRepair() then return end
+
+    local cost = GetRepairAllCost()
+    if cost <= 0 then return end
+
+    local money = GetMoney()
+    local repaired = false
+
+    -- Try Guild Repair
+    if self.settings.useGuild and IsInGuild() and CanGuildBankRepair() then
+        local guildMoney = GetGuildBankWithdrawMoney()
+        if guildMoney == -1 or guildMoney >= cost then
+            RepairAllItems(true)
+            repaired = true
+            print("|cff00ff00Auto-Repaired (Guild)|r")
+        end
+    end
+
+    -- Fallback to Personal Repair
+    if not repaired and money >= cost then
+        RepairAllItems()
+        repaired = true
+        local gold = math.floor(cost / 10000)
+        local silver = math.floor((cost % 10000) / 100)
+        local copper = cost % 100
+        print(string.format("|cff00ff00Auto-Repaired for %dg %ds %dc|r", gold, silver, copper))
+    end
+
+    if not repaired then
+        print("|cffff0000Not enough money to auto-repair!|r")
+    end
+end
+
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function DurabilityWidget:OpenMenu()
+    if not addon.Menu then return end
+
+    local items = {
+        {
+            text = "Auto-Repair",
+            checked = self.settings.autoRepair,
+            func = function() self.settings.autoRepair = not self.settings.autoRepair end,
+            closeOnClick = false,
+        },
+        {
+            text = "Use Guild Funds",
+            checked = self.settings.useGuild,
+            func = function() self.settings.useGuild = not self.settings.useGuild end,
+            closeOnClick = false,
+        },
+    }
+
+    addon.Menu:Open(self.frame, items)
+end
+
+function DurabilityWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Durability", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
     
-    local lowest, slotInfo = GetDurabilityInfo()
+    local lowest, slotInfo = self:GetDurabilityInfo()
     
+    local shownAny = false
     for _, info in ipairs(slotInfo) do
-        local r, g = 0, 1
-        if info.pct < 25 then
-            r, g = 1, 0
-        elseif info.pct < 50 then
-            r, g = 1, 0.65
+        if info.pct < 100 then
+            local r, g, b = 1, 1, 1
+            if info.pct <= 20 then r, g, b = 1, 0, 0
+            elseif info.pct <= 50 then r, g, b = 1, 0.65, 0
+            end
+
+            GameTooltip:AddDoubleLine(info.name, string.format("%d%%", info.pct), 1, 1, 1, r, g, b)
+            shownAny = true
         end
-        GameTooltip:AddDoubleLine(info.name, string.format("%d%%", info.pct), 0.7, 0.7, 0.7, r, g, 0)
+    end
+
+    if not shownAny then
+        GameTooltip:AddLine("All items at 100%", 0, 1, 0)
     end
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Open Character", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Character Info", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Settings", 0.7, 0.7, 0.7, 1, 1, 1)
+
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+function DurabilityWidget:OnClick(button)
+    if button == "RightButton" then
+        self:OpenMenu()
+    else
+        ToggleCharacter("PaperDollFrame")
+    end
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusDurabilityWidget", UIParent)
-    f:SetSize(70, 20)
-    f:SetClampedToScreen(true)
-    f.editModeName = "Durability"
-    
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = 12 })
-    end
-    
-    -- No default position - WidgetManager places in drawer
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", ShowTooltip)
-    f:SetScript("OnLeave", HideTooltip)
-    
-    -- Click to open character panel
-    f:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and not self.isDragging then
-            ToggleCharacter("PaperDollFrame")
-        end
-    end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WM = addon.WidgetManager
-        if not WM or not WM:OnWidgetDragStart("Durability") then
-            return  -- Block drag if drawer isn't open
-        end
-        self.isDragging = true
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")
-        self:StartMoving()
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM2 = addon.WidgetManager
-                if WM2 then WM2:OnWidgetDragUpdate() end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self.isDragging = false
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        local WM = addon.WidgetManager
-        if WM then WM:OnWidgetDragStop("Durability") end
-    end)
-    
-    f:RegisterForDrag("LeftButton")
-    return f
-end
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function DurabilityWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(70, 20)
     
-    -- Create event frame for durability updates
-    local eventFrame = CreateFrame("Frame")
-    self.eventFrame = eventFrame
+    -- Setup handlers
+    self:SetUpdateFunc(function() self:Update() end)
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    local WM = addon.WidgetManager
-    if WM then
-        WM:Register("Durability", {
-            name = "Durability",
-            frame = widgetFrame,
-            onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
-            onUndock = function(f) UpdateDurability() end,
-            onEnable = function(f)
-                -- Re-register durability event and update display
-                eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
-                UpdateDurability()
-            end,
-            onDisable = function(f)
-                -- Unregister event to save resources
-                eventFrame:UnregisterEvent("UPDATE_INVENTORY_DURABILITY")
-            end,
-        })
-    end
+    -- Register events
+    self:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
+    self:RegisterEvent("MERCHANT_SHOW", function() self:TryAutoRepair() end)
     
-    eventFrame:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
-    eventFrame:SetScript("OnEvent", UpdateDurability)
+    -- Register with manager
+    self:Register()
     
-    UpdateDurability()
-    widgetFrame:Show()
+    -- Initial update
+    self:Update()
 end
 
+-- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
