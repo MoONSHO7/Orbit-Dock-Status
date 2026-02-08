@@ -22,6 +22,7 @@ Core\StatusData.lua
 Core\StatusDock.lua
 
 # Widgets
+Widgets\BaseWidget.lua
 Widgets\WidgetManager.lua
 Widgets\Performance.lua
 Widgets\CombatTimer.lua

@@ -146,125 +146,31 @@ local statusData = {
     color = { r = 1, g = 1, b = 1, a = 1 },
 }
 
-local function GetXPData()
-    local current = UnitXP("player")
-    local max = UnitXPMax("player")
-    local isRested = GetRestState() == 1
-    
-    if not current or not max or max == 0 then
-        return nil
-    end
-    
-    return {
-        type = "XP",
-        current = current,
-        max = max,
-        progress = current / max,
-        color = isRested and SD.Colors.XP_RESTED or SD.Colors.XP,
-    }
-end
-
-local function GetReputationData()
-    local watchedFactionData = C_Reputation.GetWatchedFactionData()
-    if not watchedFactionData or watchedFactionData.factionID == 0 then
-        return nil
-    end
-    
-    local factionID = watchedFactionData.factionID
-    local current, max
-    local reactionLevel = watchedFactionData.reaction or 4
-    
-    -- Handle paragon
-    if C_Reputation.IsFactionParagonForCurrentPlayer(factionID) then
-        local currentValue, threshold = C_Reputation.GetFactionParagonInfo(factionID)
-        if currentValue and threshold and threshold > 0 then
-            current = currentValue % threshold
-            max = threshold
-        end
-        return {
-            type = "REP",
-            current = current or 0,
-            max = max or 1,
-            progress = (current or 0) / (max or 1),
-            color = SD.Colors.REP_PARAGON,
-        }
-    end
-    
-    -- Handle major faction (renown)
-    if C_Reputation.IsMajorFaction(factionID) then
-        local majorFactionData = C_MajorFactions.GetMajorFactionData(factionID)
-        if majorFactionData then
-            current = majorFactionData.renownReputationEarned or 0
-            max = majorFactionData.renownLevelThreshold or 1
-        end
-        return {
-            type = "REP",
-            current = current or 0,
-            max = max or 1,
-            progress = (current or 0) / (max or 1),
-            color = SD.Colors.REP_PARAGON,
-        }
-    end
-    
-    -- Normal reputation
-    current = watchedFactionData.currentStanding - watchedFactionData.currentReactionThreshold
-    max = watchedFactionData.nextReactionThreshold - watchedFactionData.currentReactionThreshold
-    
-    if not current or not max or max == 0 then
-        return nil
-    end
-    
-    return {
-        type = "REP",
-        current = current,
-        max = max,
-        progress = current / max,
-        color = SD.ReputationColors[reactionLevel] or SD.Colors.REP_NEUTRAL,
-    }
-end
-
-local function GetHonorData()
-    local current = UnitHonor("player")
-    local max = UnitHonorMax("player")
-    
-    if not current or not max or max == 0 then
-        return nil
-    end
-    
-    return {
-        type = "HONOR",
-        current = current,
-        max = max,
-        progress = current / max,
-        color = SD.Colors.HONOR,
-    }
-end
-
 local function UpdateStatusData()
     -- Get data based on current bar type
     local data
     if currentBarType == "XP" then
-        data = GetXPData()
+        data = SD.GetXPData()
     elseif currentBarType == "REP" then
-        data = GetReputationData()
+        data = SD.GetReputationData()
     elseif currentBarType == "HONOR" then
-        data = GetHonorData()
+        data = SD.GetHonorData()
     end
     
     -- If current type has no data, try fallback to one that does
     if not data then
         -- Try XP first (most common)
-        data = GetXPData()
+        data = SD.GetXPData()
         if data then
             currentBarType = "XP"
         else
             -- Try Rep
-            data = GetReputationData()
+            data = SD.GetReputationData()
             if data then
                 currentBarType = "REP"
             else
                 -- Try Honor
-                data = GetHonorData()
+                data = SD.GetHonorData()
                 if data then
                     currentBarType = "HONOR"
                 end
