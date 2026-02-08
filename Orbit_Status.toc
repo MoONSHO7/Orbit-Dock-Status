@@ -35,3 +35,5 @@ Widgets\Location.lua
 Widgets\Coordinates.lua
 Widgets\Friends.lua
 Widgets\Guild.lua
+Widgets\LDB.lua
+Widgets\Volume.lua

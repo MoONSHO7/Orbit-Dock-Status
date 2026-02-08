@@ -305,6 +305,11 @@ end
 
 local dragStartZone = nil  -- Track where widget started drag from
 
+--- Check if a widget is currently being dragged
+function WidgetManager:IsDragging()
+    return draggedWidget ~= nil
+end
+
 --- Check if dragging is allowed (drawer must be open)
 function WidgetManager:CanDrag()
     return addon.IsDrawerOpen and addon.IsDrawerOpen()

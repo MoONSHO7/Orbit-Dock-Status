@@ -818,6 +818,53 @@ local function CreateDock()
     frame:SetScript("OnEnter", ShowTooltip)
     frame:SetScript("OnLeave", HideTooltip)
     
+    -- Auto-Hide Logic
+    local autoHideTimer = 0
+    frame:SetScript("OnUpdate", function(self, elapsed)
+        local autoHide = Plugin:GetSetting(1, "AutoHide")
+
+        -- If dragging a widget, keep dock visible
+        local isDragging = false
+        if addon.WidgetManager and addon.WidgetManager.IsDragging then
+            isDragging = addon.WidgetManager:IsDragging()
+        end
+
+        if not autoHide or isDragging or isEditModeActive then
+            self:SetAlpha(1)
+            return
+        end
+
+        local isOver = self:IsMouseOver()
+
+        -- Check if mouse is over drawer button
+        if drawerButton and drawerButton:IsMouseOver() then
+            isOver = true
+        end
+
+        -- Check if mouse is over drawer panel
+        if drawerPanel and drawerPanel:IsShown() and drawerPanel:IsMouseOver() then
+            isOver = true
+        end
+
+        -- Check if mouse is over any tooltip anchored to us
+        if GameTooltip:IsShown() and GameTooltip:GetOwner() == self then
+            isOver = true
+        end
+
+        if isOver then
+            self:SetAlpha(1)
+            autoHideTimer = 0
+        else
+            autoHideTimer = autoHideTimer + elapsed
+            if autoHideTimer > 0.5 then
+                local current = self:GetAlpha()
+                if current > 0 then
+                    self:SetAlpha(math.max(0, current - (elapsed * 4))) -- Fade out speed
+                end
+            end
+        end
+    end)
+
     -- Mouse wheel to cycle bar types
     frame:EnableMouseWheel(true)
     frame:SetScript("OnMouseWheel", function(_, delta)
@@ -959,6 +1006,7 @@ function Plugin:AddSettings(dialog, systemFrame)
             { type = "slider", key = "EdgeSize", label = "Status Bar Height", min = 1, max = 8, step = 1, default = 2 },
             { type = "slider", key = "WidgetSlotCount", label = "Widget Slots", min = 3, max = 12, step = 1, default = 5 },
             { type = "slider", key = "TextSize", label = "Text Size", min = 8, max = 24, step = 1, default = 12 },
+            { type = "checkbox", key = "AutoHide", label = "Auto-Hide", default = false },
             { type = "color", key = "BackdropColor", label = "Background Color", default = { r = 0.1, g = 0.1, b = 0.1, a = 0.8 } },
         },
     }
