@@ -24,6 +24,7 @@ Core\StatusDock.lua
 # Widgets
 Widgets\BaseWidget.lua
 Widgets\WidgetManager.lua
+Widgets\LDB.lua
 Widgets\Performance.lua
 Widgets\CombatTimer.lua
 Widgets\Time.lua
@@ -33,6 +34,5 @@ Widgets\Durability.lua
 Widgets\BagSpace.lua
 Widgets\ItemLevel.lua
 Widgets\Location.lua
-Widgets\Coordinates.lua
 Widgets\Friends.lua
 Widgets\Guild.lua

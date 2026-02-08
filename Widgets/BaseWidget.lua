@@ -24,6 +24,7 @@ function BaseWidget:New(name)
     instance.tooltipFunc = nil
     instance.updateFunc = nil
     instance.clickFunc = nil
+    instance.inEditMode = false
     return instance
 end
 
@@ -151,6 +152,19 @@ function BaseWidget:Enable()
     end
 
     if self.OnEnable then self:OnEnable() end
+
+    -- Edit Mode Integration
+    if Orbit.EventBus then
+        Orbit.EventBus:On("EDIT_MODE_ENTERED", function()
+            self.inEditMode = true
+            if self.updateFunc then self.updateFunc(self) end
+            if self.frame then self.frame:Show() end
+        end)
+        Orbit.EventBus:On("EDIT_MODE_EXITED", function()
+            self.inEditMode = false
+            if self.updateFunc then self.updateFunc(self) end
+        end)
+    end
 end
 
 --- Disable the widget (stop listening)

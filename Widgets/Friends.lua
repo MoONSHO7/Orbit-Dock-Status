@@ -1,5 +1,6 @@
 -- Friends.lua
--- Friends online widget for StatusDock
+-- Advanced Friends widget for StatusDock
+-- Features: Battle.net & WoW Friends, Game grouping, App ID icons
 
 local _, addon = ...
 
@@ -7,157 +8,214 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local FriendsWidget = {}
+if not addon.BaseWidget then return end
+
+local FriendsWidget = addon.BaseWidget:New("Friends")
 addon.FriendsWidget = FriendsWidget
 
-local widgetFrame = nil
+-- [ CONSTANTS ] ---------------------------------------------------------------
 
-local function GetFriendsOnline()
-    local online = 0
-    local numFriends = C_FriendList.GetNumFriends()
-    for i = 1, numFriends do
+local COLORS = {
+    BNET = "|cff82c5ff", -- Battle.net Blue
+    WOW = "|cffffd200", -- WoW Gold
+    D3 = "|cffc41f3b", -- Diablo Red
+    SC2 = "|cff4286f4", -- Starcraft Blue
+    OW = "|cffff9c00", -- Overwatch Orange
+    Hearthstone = "|cff5cacee", -- Hearthstone Blue
+    HOTs = "|cffb400ff", -- Heroes Purple
+    App = "|cff82c5ff", -- Battle.net App
+    Mobile = "|cff82c5ff", -- Mobile App
+}
+
+local ICONS = {
+    -- Placeholder icons or texture paths if available
+    -- Using generic game icons for now
+    WoW = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    D3 = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    SC2 = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    OW = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    Hearthstone = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    HOTs = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    App = "Interface\\Icons\\Inv_Misc_QuestionMark",
+    Mobile = "Interface\\Icons\\Inv_Misc_QuestionMark",
+}
+
+-- [ HELPER FUNCTIONS ] --------------------------------------------------------
+
+function FriendsWidget:GetFriendInfo()
+    local bnetFriends = BNGetNumFriends()
+    local wowFriends = C_FriendList.GetNumFriends()
+    local onlineBNet = 0
+    local onlineWoW = 0
+
+    local friendList = {}
+
+    -- Process Battle.net Friends
+    for i = 1, bnetFriends do
+        local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
+        if accountInfo and accountInfo.gameAccountInfo and accountInfo.gameAccountInfo.isOnline then
+            onlineBNet = onlineBNet + 1
+            local gameAccount = accountInfo.gameAccountInfo
+            local client = gameAccount.clientProgram
+            local name = accountInfo.accountName
+            local note = accountInfo.note
+            local charName = gameAccount.characterName
+            local realmName = gameAccount.realmName
+            local factionName = gameAccount.factionName
+            local gameText = gameAccount.richPresence or ""
+            local class = gameAccount.className or ""
+            local level = gameAccount.characterLevel or ""
+            local zone = gameAccount.areaName or ""
+
+            table.insert(friendList, {
+                type = "BNET",
+                name = name,
+                note = note,
+                client = client,
+                charName = charName,
+                realmName = realmName,
+                faction = factionName,
+                status = gameText,
+                class = class,
+                level = level,
+                zone = zone,
+            })
+        end
+    end
+    
+    -- Process WoW Friends
+    for i = 1, wowFriends do
         local info = C_FriendList.GetFriendInfoByIndex(i)
         if info and info.connected then
-            online = online + 1
+            onlineWoW = onlineWoW + 1
+            table.insert(friendList, {
+                type = "WOW",
+                name = info.name,
+                note = info.notes,
+                client = "WoW",
+                charName = info.name,
+                class = info.className,
+                level = info.level,
+                zone = info.area,
+                status = info.status, -- AFK/DND
+            })
         end
     end
     
-    -- Also count BNet friends
-    local numBNet = BNGetNumFriends()
-    for i = 1, numBNet do
-        local info = C_BattleNet.GetFriendAccountInfo(i)
-        if info and info.gameAccountInfo and info.gameAccountInfo.isOnline then
-            online = online + 1
-        end
-    end
-    
-    return online
+    -- Sort by client (WoW first) then Name
+    table.sort(friendList, function(a, b)
+        if a.client == "WoW" and b.client ~= "WoW" then return true end
+        if a.client ~= "WoW" and b.client == "WoW" then return false end
+        return a.name < b.name
+    end)
+
+    return onlineBNet, onlineWoW, friendList
 end
 
-local function UpdateFriends()
-    if not widgetFrame then return end
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function FriendsWidget:Update()
+    local bnet, wow, _ = self:GetFriendInfo()
+    local total = bnet + wow
+    local color = total > 0 and "|cff00ff00" or "|cff888888"
     
-    local online = GetFriendsOnline()
-    local color = online > 0 and "|cff00ff00" or "|cff888888"
-    widgetFrame.Text:SetText(string.format("%s%d|r Friends", color, online))
-    
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 10, 20)
+    -- Icon + Count
+    self:SetText(string.format("%s%d|r Friends", color, total))
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusFriendsWidget", UIParent)
-    f:SetSize(80, 20)
-    f:SetClampedToScreen(true)
-    f.editModeName = "Friends"
-    
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = 12 })
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function FriendsWidget:ShowTooltip()
+    local bnet, wow, friends = self:GetFriendInfo()
+    local total = bnet + wow
+
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddDoubleLine("Friends List", string.format("%d Online", total), 0.4, 0.8, 1, 1, 1, 1)
+    GameTooltip:AddLine(" ")
+
+    if total == 0 then
+        GameTooltip:AddLine("No friends online.", 0.5, 0.5, 0.5)
+    else
+        local currentClient = nil
+
+        -- Limit display
+        local maxDisplay = 20
+        for i, f in ipairs(friends) do
+            if i > maxDisplay then
+                GameTooltip:AddLine(string.format("... and %d more", total - maxDisplay), 0.5, 0.5, 0.5)
+                break
+            end
+
+            -- Section Headers by Game Client
+            if f.client ~= currentClient then
+                currentClient = f.client
+                local header = f.client
+                if header == "WoW" then header = "World of Warcraft" end
+                if header == "App" then header = "Battle.net App" end
+                if header == "BSAp" then header = "Battle.net Mobile" end
+                GameTooltip:AddLine(" ")
+                GameTooltip:AddLine(COLORS.BNET .. header .. "|r")
+            end
+
+            -- Formatting
+            local leftText = f.name
+            if f.charName and f.charName ~= "" then
+                leftText = string.format("%s (%s)", f.name, f.charName)
+            end
+
+            local rightText = ""
+            if f.zone and f.zone ~= "" then
+                rightText = f.zone
+            elseif f.status and f.status ~= "" then
+                rightText = f.status
+            end
+
+            if f.level and f.level ~= "" and f.level ~= 0 then
+                rightText = string.format("Lvl %s %s", f.level, rightText)
+            end
+
+            GameTooltip:AddDoubleLine(leftText, rightText, 1, 1, 1, 0.7, 0.7, 0.7)
+        end
     end
     
-    -- No default position - WidgetManager places in drawer
-    f:SetMovable(true)
-    f:EnableMouse(true)
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("Click", "Open Friends", 0.7, 0.7, 0.7, 1, 1, 1)
     
-    -- Tooltip
-    f:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine("Friends", 1, 0.82, 0)
-        GameTooltip:AddLine(" ")
-        local numFriends = C_FriendList.GetNumFriends()
-        local numBNet = BNGetNumFriends()
-        local online = GetFriendsOnline()
-        GameTooltip:AddDoubleLine("Online:", tostring(online), 0.7, 0.7, 0.7, 0, 1, 0)
-        GameTooltip:AddDoubleLine("WoW Friends:", tostring(numFriends), 0.7, 0.7, 0.7, 1, 1, 1)
-        GameTooltip:AddDoubleLine("Battle.net:", tostring(numBNet), 0.7, 0.7, 0.7, 0.4, 0.6, 1)
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddDoubleLine("Click", "Open Friends", 0.7, 0.7, 0.7, 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    
-    -- Click to open friends panel
-    f:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and not self.isDragging then
-            ToggleFriendsFrame()
-        end
-    end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WM = addon.WidgetManager
-        if not WM or not WM:OnWidgetDragStart("Friends") then
-            return  -- Block drag if drawer isn't open
-        end
-        self.isDragging = true
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")
-        self:StartMoving()
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM2 = addon.WidgetManager
-                if WM2 then WM2:OnWidgetDragUpdate() end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self.isDragging = false
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        local WM = addon.WidgetManager
-        if WM then WM:OnWidgetDragStop("Friends") end
-    end)
-    
-    f:RegisterForDrag("LeftButton")
-    return f
+    GameTooltip:Show()
 end
+
+function FriendsWidget:OnClick(button)
+    ToggleFriendsFrame(1)
+end
+
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function FriendsWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(80, 20)
     
-    -- Create event frame for friend list updates
-    local eventFrame = CreateFrame("Frame")
-    self.eventFrame = eventFrame
+    -- Setup handlers
+    self:SetUpdateFunc(function() self:Update() end)
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    local WM = addon.WidgetManager
-    if WM then
-        WM:Register("Friends", {
-            name = "Friends",
-            frame = widgetFrame,
-            onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
-            onUndock = function(f) UpdateFriends() end,
-            onEnable = function(f)
-                -- Re-register friend list events and update display
-                eventFrame:RegisterEvent("FRIENDLIST_UPDATE")
-                eventFrame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
-                UpdateFriends()
-            end,
-            onDisable = function(f)
-                -- Unregister events to save resources
-                eventFrame:UnregisterEvent("FRIENDLIST_UPDATE")
-                eventFrame:UnregisterEvent("BN_FRIEND_INFO_CHANGED")
-            end,
-        })
-    end
+    -- Register events
+    self:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
+    self:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
+    self:RegisterEvent("BN_INFO_CHANGED")
+    self:RegisterEvent("FRIENDLIST_UPDATE")
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
     
-    eventFrame:RegisterEvent("FRIENDLIST_UPDATE")
-    eventFrame:RegisterEvent("BN_FRIEND_INFO_CHANGED")
-    eventFrame:SetScript("OnEvent", UpdateFriends)
+    -- Register with manager
+    self:Register()
     
-    UpdateFriends()
-    widgetFrame:Show()
+    -- Initial update
+    self:Update()
 end
 
+-- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    C_Timer.After(0.5, function() FriendsWidget:OnLoad() end)
+    C_Timer.After(1, function() FriendsWidget:OnLoad() end)
 end)

@@ -77,8 +77,7 @@ function DurabilityWidget:Update()
     local color = self:GetColor(lowest)
     
     -- Contextual Visibility: Hide if 100% and not in Edit Mode
-    -- (We check Orbit's Edit Mode state if possible, but for now just hide)
-    if lowest >= 100 then
+    if lowest >= 100 and not self.inEditMode then
         self.frame:Hide()
     else
         self.frame:Show()
