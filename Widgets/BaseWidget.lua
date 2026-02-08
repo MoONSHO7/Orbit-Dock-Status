@@ -254,3 +254,21 @@ function BaseWidget:OnUndock()
         self.updateFunc(self)
     end
 end
+
+--- Start flashing the widget (for critical alerts)
+function BaseWidget:Flash()
+    if not self.frame then return end
+    if not self.flashing then
+        self.flashing = true
+        UIFrameFlash(self.frame, 0.5, 0.5, -1, true, 0, 0, nil)
+    end
+end
+
+--- Stop flashing the widget
+function BaseWidget:StopFlash()
+    if not self.frame then return end
+    if self.flashing then
+        self.flashing = false
+        UIFrameFlashStop(self.frame)
+    end
+end

@@ -1,6 +1,7 @@
 -- Menu.lua
 -- Lightweight dropdown menu system for StatusDock
 -- Supports custom frames, checkboxes, sliders, and buttons
+-- Enhanced with scrolling support for long lists
 
 local _, addon = ...
 
@@ -14,7 +15,8 @@ addon.Menu = Menu
 local menuFrame = nil
 local BUTTON_HEIGHT = 20
 local PADDING = 10
-local WIDTH = 180
+local WIDTH = 200
+local MAX_HEIGHT = 300 -- Max height before scrolling
 
 -- [ CREATION ] ----------------------------------------------------------------
 
@@ -41,12 +43,18 @@ local function CreateMenuFrame()
     closeBtn:SetScript("OnLeave", function() end)
     f.closeBtn = closeBtn
 
-    -- Actual content frame on top
-    f.content = CreateFrame("Frame", nil, f)
-    f.content:SetAllPoints()
-    f.content:SetFrameLevel(f:GetFrameLevel() + 5)
+    -- ScrollFrame
+    f.scrollFrame = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
+    f.scrollFrame:SetPoint("TOPLEFT", f, "TOPLEFT", 0, -5)
+    f.scrollFrame:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -25, 5) -- Leave space for scrollbar
+
+    -- Content Frame
+    f.content = CreateFrame("Frame", nil, f.scrollFrame)
+    f.content:SetSize(WIDTH - 25, 100) -- Initial height
+    f.scrollFrame:SetScrollChild(f.content)
 
     f.items = {}
+    f.sliders = {}
 
     return f
 end
@@ -56,7 +64,7 @@ local function GetMenuItem(index)
 
     if not menuFrame.items[index] then
         local btn = CreateFrame("Button", nil, menuFrame.content)
-        btn:SetSize(WIDTH - PADDING*2, BUTTON_HEIGHT)
+        btn:SetSize(WIDTH - 25 - PADDING*2, BUTTON_HEIGHT)
         btn.Text = btn:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
         btn.Text:SetPoint("LEFT", btn, "LEFT", 5, 0)
         btn.Text:SetJustifyH("LEFT")
@@ -85,13 +93,20 @@ end
 
 local function GetSliderItem(index)
     if not menuFrame then menuFrame = CreateMenuFrame() end
-    -- Store sliders in same list but mark them
-    -- Simplified: Just use a separate pool or rebuild
-    -- For now, let's just make a slider frame
-    local slider = CreateFrame("Slider", nil, menuFrame.content, "OptionsSliderTemplate")
-    slider:SetWidth(WIDTH - PADDING*3)
-    slider:SetHeight(16)
-    return slider
+
+    if not menuFrame.sliders[index] then
+        local slider = CreateFrame("Slider", nil, menuFrame.content, "OptionsSliderTemplate")
+        slider:SetWidth(WIDTH - 25 - PADDING*3)
+        slider:SetHeight(16)
+
+        -- Add value label
+        slider.Value = slider:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+        slider.Value:SetPoint("TOP", slider, "BOTTOM", 0, -2)
+
+        menuFrame.sliders[index] = slider
+    end
+
+    return menuFrame.sliders[index]
 end
 
 -- [ API ] ---------------------------------------------------------------------
@@ -101,29 +116,24 @@ function Menu:Open(anchorFrame, items)
 
     -- Hide all existing items
     for _, item in pairs(menuFrame.items) do item:Hide() end
-    if menuFrame.sliders then
-        for _, slider in pairs(menuFrame.sliders) do slider:Hide() end
-    end
+    for _, slider in pairs(menuFrame.sliders) do slider:Hide() end
 
     local yOffset = -PADDING
+    local buttonCount = 0
+    local sliderCount = 0
 
     for i, data in ipairs(items) do
         if data.type == "slider" then
-            if not menuFrame.sliders then menuFrame.sliders = {} end
-            local slider = menuFrame.sliders[i]
-            if not slider then
-                slider = CreateFrame("Slider", nil, menuFrame.content, "OptionsSliderTemplate")
-                slider:SetWidth(WIDTH - PADDING*3)
-                slider:SetHeight(16)
-                menuFrame.sliders[i] = slider
-            end
+            sliderCount = sliderCount + 1
+            local slider = GetSliderItem(sliderCount)
 
             slider:ClearAllPoints()
-            slider:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", PADDING + 5, yOffset - 15)
+            slider:SetPoint("TOPLEFT", menuFrame.content, "TOPLEFT", PADDING + 5, yOffset - 15)
             slider:SetMinMaxValues(data.min, data.max)
             slider:SetValue(data.value)
             slider:SetScript("OnValueChanged", function(self, value)
                 if data.func then data.func(value) end
+                if self.Value then self.Value:SetText(string.format("%.2f", value)) end
             end)
 
             -- Label
@@ -134,12 +144,13 @@ function Menu:Open(anchorFrame, items)
             slider.Label:SetText(data.text)
 
             slider:Show()
-            yOffset = yOffset - 40
+            yOffset = yOffset - 45
         else
             -- Standard Button / Checkbox
-            local btn = GetMenuItem(i)
+            buttonCount = buttonCount + 1
+            local btn = GetMenuItem(buttonCount)
             btn:ClearAllPoints()
-            btn:SetPoint("TOPLEFT", menuFrame, "TOPLEFT", PADDING, yOffset)
+            btn:SetPoint("TOPLEFT", menuFrame.content, "TOPLEFT", PADDING, yOffset)
             btn.Text:SetText(data.text)
 
             if data.checked ~= nil then
@@ -166,12 +177,23 @@ function Menu:Open(anchorFrame, items)
         end
     end
 
-    -- Resize frame
-    menuFrame:SetHeight(math.abs(yOffset) + PADDING)
+    -- Calculate required height
+    local contentHeight = math.abs(yOffset) + PADDING
+    menuFrame.content:SetHeight(contentHeight)
+
+    -- Set frame height (limit to MAX_HEIGHT)
+    local frameHeight = math.min(contentHeight + 10, MAX_HEIGHT)
+    menuFrame:SetHeight(frameHeight)
+
+    -- Reset scroll
+    menuFrame.scrollFrame:SetVerticalScroll(0)
 
     -- Position
     menuFrame:ClearAllPoints()
     menuFrame:SetPoint("BOTTOMLEFT", anchorFrame, "TOPLEFT", 0, 5)
+
+    -- Ensure on screen
+    menuFrame:SetClampedToScreen(true)
 
     menuFrame:Show()
 end

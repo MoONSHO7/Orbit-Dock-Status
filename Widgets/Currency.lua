@@ -1,6 +1,6 @@
 -- Currency.lua
 -- Advanced Currency widget for StatusDock
--- Features: Configurable tracking, weekly cap visualization, detailed tooltip
+-- Features: Configurable tracking, weekly caps, Warband Transfer support
 
 local _, addon = ...
 
@@ -25,8 +25,13 @@ local TRACKED_CURRENCIES = {
     1220, -- Order Resources
     1553, -- Azerite
     1792, -- Honor (BFA)
-    -- Add more relevant Dragonflight IDs
     2003, -- Dragon Isles Supplies
+    2245, -- Flightstones
+    2706, -- Whelpling's Dreaming Crest
+    2707, -- Drake's Dreaming Crest
+    2708, -- Wyrm's Dreaming Crest
+    2709, -- Aspect's Dreaming Crest
+    2777, -- Renascent Dream (Catalyst)
 }
 
 -- [ HELPER ] ------------------------------------------------------------------
@@ -34,17 +39,21 @@ local TRACKED_CURRENCIES = {
 function CurrencyWidget:GetCurrencyInfo(id)
     local info = C_CurrencyInfo.GetCurrencyInfo(id)
     if not info then return nil end
+
+    -- Add Warband Transferable Flag (heuristic or API)
+    -- As of 11.0, info.isAccountTransferable should exist
     return info
 end
 
 -- [ UPDATE ] ------------------------------------------------------------------
 
 function CurrencyWidget:Update()
-    -- For now, display the first tracked currency that has > 0 amount, or just Conquest/Honor
-    -- Better: Display configured primary currency
+    -- Heuristic: Show the currency with the most recent gain?
+    -- Or just stick to Conquest/Flightstones for current content.
+    -- Better: Configurable via settings (TODO). For now, Flightstones + Conquest.
 
-    local primaryID = 1602 -- Default Conquest
-    local secondaryID = 490 -- Default Honor
+    local primaryID = 2245 -- Flightstones (Current PVE)
+    local secondaryID = 1602 -- Conquest (Current PVP)
 
     local info1 = self:GetCurrencyInfo(primaryID)
     local info2 = self:GetCurrencyInfo(secondaryID)
@@ -67,6 +76,25 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function CurrencyWidget:OpenMenu()
+    if not addon.Menu then return end
+
+    local items = {
+        {
+            text = "Open Currency Tab",
+            func = function() ToggleCharacter("TokenFrame") end,
+        },
+        -- Transfer UI (if available)
+        -- Placeholder for Warband Transfer
+        -- {
+        --     text = "Transfer Currency",
+        --     func = function() ... end
+        -- }
+    }
+
+    addon.Menu:Open(self.frame, items)
+end
+
 function CurrencyWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -88,45 +116,51 @@ function CurrencyWidget:ShowTooltip()
 
             -- Check weekly cap
             if info.maxWeeklyQuantity > 0 then
-                countStr = countStr .. string.format(" (Cap: %d)", info.maxWeeklyQuantity)
+                local currentWeek = info.quantityEarnedThisWeek or 0
+                countStr = countStr .. string.format(" (Week: %d/%d)", currentWeek, info.maxWeeklyQuantity)
             end
 
-            GameTooltip:AddDoubleLine(string.format("|T%s:14|t %s", icon, name), countStr, 1, 1, 1, 1, 1, 1)
+            -- Transferable indicator
+            local transferIcon = ""
+            if info.isAccountTransferable then
+                transferIcon = "|TInterface\\Common\\ReputationStar:14:14:0:0:32:32:0:32:0:32|t" -- Placeholder icon
+            end
+
+            GameTooltip:AddDoubleLine(string.format("|T%s:14|t %s%s", icon, name, transferIcon), countStr, 1, 1, 1, 1, 1, 1)
         end
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Currency Tab", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Currency Tab", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Menu", 0.7, 0.7, 0.7, 1, 1, 1)
 
     GameTooltip:Show()
 end
 
 function CurrencyWidget:OnClick(button)
-    ToggleCharacter("TokenFrame")
+    if button == "RightButton" then
+        self:OpenMenu()
+    else
+        ToggleCharacter("TokenFrame")
+    end
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function CurrencyWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(120, 20)
 
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
     self:RegisterEvent("CURRENCY_DISPLAY_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Register with manager
     self:Register()
-
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

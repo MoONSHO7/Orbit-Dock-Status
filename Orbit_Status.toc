@@ -19,6 +19,7 @@
 Core\StatusData.lua
 Core\Config.lua
 Core\Graph.lua
+Core\Formatting.lua
 
 # Core
 Core\StatusDock.lua
@@ -44,3 +45,13 @@ Widgets\Dungeon.lua
 Widgets\Quest.lua
 Widgets\Loot.lua
 Widgets\Group.lua
+Widgets\Notes.lua
+Widgets\Buffs.lua
+Widgets\Speed.lua
+Widgets\Equipment.lua
+Widgets\Professions.lua
+Widgets\Damage.lua
+Widgets\Reputation.lua
+Widgets\Experience.lua
+Widgets\Missions.lua
+Widgets\Mounts.lua
