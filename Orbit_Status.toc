@@ -17,6 +17,8 @@
 
 # Data
 Core\StatusData.lua
+Core\Config.lua
+Core\Graph.lua
 
 # Core
 Core\StatusDock.lua
@@ -38,3 +40,7 @@ Widgets\ItemLevel.lua
 Widgets\Location.lua
 Widgets\Friends.lua
 Widgets\Guild.lua
+Widgets\Dungeon.lua
+Widgets\Quest.lua
+Widgets\Loot.lua
+Widgets\Group.lua

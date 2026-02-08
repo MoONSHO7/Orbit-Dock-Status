@@ -1,6 +1,6 @@
 -- Gold.lua
 -- Currency display widget for StatusDock
--- Features: Session profit/loss tracking, smart formatting, Auto-Sell Junk
+-- Features: Session profit/loss tracking, smart formatting, Auto-Sell Junk, Graph Visualization
 
 local _, addon = ...
 
@@ -12,6 +12,17 @@ if not addon.BaseWidget then return end
 
 local GoldWidget = addon.BaseWidget:New("Gold")
 addon.GoldWidget = GoldWidget
+
+-- [ SETTINGS ] ----------------------------------------------------------------
+
+GoldWidget.settings = {
+    autoSell = true,
+}
+
+-- [ HISTORY ] -----------------------------------------------------------------
+
+GoldWidget.history = {}
+local HISTORY_SIZE = 60 -- Store last 60 minutes? Or simpler: Session snapshots
 
 -- [ FORMATTING ] --------------------------------------------------------------
 
@@ -26,15 +37,13 @@ function GoldWidget:FormatMoney(copper, full)
 
     -- Smart formatting for bar display
     if gold >= 1000000 then
-        return string.format("|cffffd700%.1fm|r", gold / 1000000)
+        return string.format("|cffffd700%.2fm|r", gold / 1000000)
     elseif gold >= 1000 then
         return string.format("|cffffd700%.1fk|r", gold / 1000)
     elseif gold > 0 then
         return string.format("|cffffd700%d|rg |cffc0c0c0%d|rs", gold, silver)
-    elseif silver > 0 then
-        return string.format("|cffc0c0c0%d|rs |cffeda55f%d|rc", silver, cop)
     else
-        return string.format("|cffeda55f%d|rc", cop)
+        return string.format("|cffc0c0c0%d|rs |cffeda55f%d|rc", silver, cop)
     end
 end
 
@@ -54,11 +63,22 @@ end
 function GoldWidget:Update()
     local money = GetMoney()
     self:SetText(self:FormatMoney(money))
+
+    -- Store history every minute? Or just on change
+    -- For session graph, we want delta over time
+    local time = GetTime()
+    if not self.lastHistoryTime or (time - self.lastHistoryTime) > 60 then
+        table.insert(self.history, money)
+        if #self.history > HISTORY_SIZE then table.remove(self.history, 1) end
+        self.lastHistoryTime = time
+    end
 end
 
 -- [ AUTO SELL JUNK ] ----------------------------------------------------------
 
 function GoldWidget:AutoSellJunk()
+    if not self.settings.autoSell then return end
+
     local profit = 0
     for bag = 0, 4 do
         for slot = 1, C_Container.GetContainerNumSlots(bag) do
@@ -80,6 +100,29 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
+function GoldWidget:OpenMenu()
+    if not addon.Menu then return end
+
+    local items = {
+        {
+            text = "Auto-Sell Grey Items",
+            checked = self.settings.autoSell,
+            func = function() self.settings.autoSell = not self.settings.autoSell end,
+            closeOnClick = false,
+        },
+        {
+            text = "Reset Session Data",
+            func = function()
+                self.sessionStart = GetMoney()
+                self.history = {}
+                self:Update()
+            end,
+        },
+    }
+
+    addon.Menu:Open(self.frame, items)
+end
+
 function GoldWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
@@ -94,19 +137,36 @@ function GoldWidget:ShowTooltip()
     
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("Left Click", "Open Bags", 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Right Click", "Reset Session", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Settings", 0.7, 0.7, 0.7, 1, 1, 1)
     
     GameTooltip:Show()
+
+    -- Draw Graph
+    if #self.history > 2 then
+        if not self.graphFrame then
+            self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
+            self.graphFrame:SetSize(200, 50)
+            self.graph = addon.Graph:New(self.graphFrame, 200, 50)
+        end
+
+        self.graphFrame:SetParent(GameTooltip)
+        self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
+        self.graphFrame:Show()
+
+        self.graph:Clear()
+        self.graph:SetColor(1, 0.84, 0, 1) -- Gold Color
+        for _, val in ipairs(self.history) do
+            self.graph:AddData(val)
+        end
+        self.graph:Draw()
+    elseif self.graphFrame then
+        self.graphFrame:Hide()
+    end
 end
 
 function GoldWidget:OnClick(button)
     if button == "RightButton" then
-        self.sessionStart = GetMoney()
-        self:Update()
-        -- Refresh tooltip if showing
-        if GameTooltip:GetOwner() == self.frame then
-            self:ShowTooltip()
-        end
+        self:OpenMenu()
     else
         ToggleAllBags()
     end
