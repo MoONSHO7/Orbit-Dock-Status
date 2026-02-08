@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local MissionsWidget = addon.BaseWidget:New("Missions")
+local MissionsWidget = addon.BaseWidget:New("Missions"); addon.MissionsWidget.category = "World"
 addon.MissionsWidget = MissionsWidget
 
 -- [ CONSTANTS ] ---------------------------------------------------------------

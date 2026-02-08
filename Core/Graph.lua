@@ -1,5 +1,6 @@
 -- Graph.lua
 -- Lightweight Line Graph rendering library for StatusDock tooltips
+-- Enhanced for robustness, class colors, and visual polish
 
 local addonName, addon = ...
 
@@ -24,17 +25,31 @@ function Graph:New(parent, width, height)
     f:SetSize(width, height)
     graph.frame = f
 
-    -- Backdrop
+    -- Backdrop (Grid-like background)
     f.bg = f:CreateTexture(nil, "BACKGROUND")
     f.bg:SetAllPoints()
-    f.bg:SetColorTexture(0, 0, 0, 0.5)
+    f.bg:SetColorTexture(0.1, 0.1, 0.1, 0.8)
+
+    -- Border line at bottom
+    f.border = f:CreateLine()
+    f.border:SetStartPoint("BOTTOMLEFT", 0, 0)
+    f.border:SetEndPoint("BOTTOMRIGHT", 0, 0)
+    f.border:SetColorTexture(0.5, 0.5, 0.5, 1)
+    f.border:SetThickness(1)
 
     graph.points = {}
     graph.lines = {}
     graph.color = { r = 0, g = 1, b = 0, a = 1 }
+    graph.minY = 0
+    graph.maxY = 0
 
     function graph:SetColor(r, g, b, a)
-        self.color = { r = r, g = g, b = b, a = a or 1 }
+        -- Support direct RGB or table (Class Colors)
+        if type(r) == "table" then
+            self.color = { r = r.r, g = r.g, b = r.b, a = r.a or 1 }
+        else
+            self.color = { r = r, g = g, b = b, a = a or 1 }
+        end
     end
 
     function graph:Clear()
@@ -45,6 +60,7 @@ function Graph:New(parent, width, height)
     end
 
     function graph:AddData(value)
+        if not value then return end
         table.insert(self.points, value)
         if #self.points > width then -- limit points to width
             table.remove(self.points, 1)
@@ -62,8 +78,13 @@ function Graph:New(parent, width, height)
             if v > max then max = v end
         end
 
+        -- Enforce a minimum range to avoid flatline division by zero
         local range = max - min
-        if range == 0 then range = 1 end
+        if range == 0 then range = 1 end -- Default range if flat
+
+        -- Padding to prevent hitting exact top/bottom
+        local padding = height * 0.1
+        local drawHeight = height - (padding * 2)
 
         local stepX = width / (#self.points - 1)
 
@@ -71,19 +92,23 @@ function Graph:New(parent, width, height)
         for i = 1, #self.points - 1 do
             if not self.lines[i] then
                 self.lines[i] = f:CreateLine()
-                self.lines[i]:SetThickness(1)
+                self.lines[i]:SetThickness(1.5) -- Thicker for visibility
+                -- Use PixelUtil if available for sharpness (not standard global, skipping)
             end
 
             local line = self.lines[i]
             line:SetColorTexture(self.color.r, self.color.g, self.color.b, self.color.a)
 
             -- Calculate coordinates
-            -- X: straightforward step
-            -- Y: normalize value between 0 and height
+            -- Y = ((Value - Min) / Range) * DrawHeight + Padding
+
             local x1 = (i - 1) * stepX
-            local y1 = ((self.points[i] - min) / range) * height
+            local val1 = self.points[i]
+            local y1 = ((val1 - min) / range) * drawHeight + padding
+
             local x2 = i * stepX
-            local y2 = ((self.points[i+1] - min) / range) * height
+            local val2 = self.points[i+1]
+            local y2 = ((val2 - min) / range) * drawHeight + padding
 
             line:SetStartPoint("BOTTOMLEFT", x1, y1)
             line:SetEndPoint("BOTTOMLEFT", x2, y2)

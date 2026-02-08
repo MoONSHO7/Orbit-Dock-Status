@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local ExperienceWidget = addon.BaseWidget:New("Experience")
+local ExperienceWidget = addon.BaseWidget:New("Experience"); addon.ExperienceWidget.category = "Character"
 addon.ExperienceWidget = ExperienceWidget
 
 -- [ STATE ] -------------------------------------------------------------------

@@ -1,6 +1,6 @@
 -- Location.lua
 -- Advanced Location widget for StatusDock
--- Features: Zone tracking, PVP status coloring, Coordinates, Fast Travel Menu
+-- Features: Zone tracking, PVP status, Coordinates, Travel Menu, Zone Events
 
 local _, addon = ...
 
@@ -10,98 +10,79 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local LocationWidget = addon.BaseWidget:New("Location")
+local LocationWidget = addon.BaseWidget:New("Location"); addon.LocationWidget.category = "World"
 addon.LocationWidget = LocationWidget
 
--- [ CONSTANTS ] ---------------------------------------------------------------
-
-local COLORS = {
-    SANCTUARY = "|cff74d5f2", -- Light Blue
-    CONTESTED = "|cffeda55f", -- Orange
-    HOSTILE = "|cffff0000",   -- Red
-    FRIENDLY = "|cff00ff00",  -- Green
-    NEUTRAL = "|cffffffff",   -- White
-}
-
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ HELPERS ] -----------------------------------------------------------------
 
 function LocationWidget:GetZoneColor()
     local pvpType = GetZonePVPInfo()
-    if pvpType == "sanctuary" then return COLORS.SANCTUARY end
-    if pvpType == "arena" then return COLORS.HOSTILE end
-    if pvpType == "friendly" then return COLORS.FRIENDLY end
-    if pvpType == "hostile" then return COLORS.HOSTILE end
-    if pvpType == "contested" then return COLORS.CONTESTED end
-    return COLORS.NEUTRAL
+    if pvpType == "sanctuary" then return "|cff74d5f2"
+    elseif pvpType == "arena" or pvpType == "hostile" then return "|cffff0000"
+    elseif pvpType == "friendly" then return "|cff00ff00"
+    elseif pvpType == "contested" then return "|cffeda55f"
+    end
+    return "|cffffffff"
 end
 
-function LocationWidget:GetCoordinates()
+function LocationWidget:GetZoneEvent()
+    -- Check for Dragonflight Events (Dreamsurge, Time Rift, etc.)
+    -- This requires checking C_AreaPoiInfo for specific IDs in the current map
     local mapID = C_Map.GetBestMapForUnit("player")
-    if not mapID then return nil, nil end
+    if not mapID then return nil end
 
-    local pos = C_Map.GetPlayerMapPosition(mapID, "player")
-    if not pos then return nil, nil end
-
-    return pos.x * 100, pos.y * 100
+    -- Simplified: Just check if we are in a zone with an event
+    -- Dreamsurge (POIs: 7332, etc?) - API lookup required for precise IDs
+    -- For now, placeholder or basic POI scan
+    return nil
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATE ] ------------------------------------------------------------------
 
 function LocationWidget:Update()
-    local subZone = GetSubZoneText()
     local zone = GetZoneText()
+    local subZone = GetSubZoneText()
     local text = (subZone ~= "") and subZone or zone
     local color = self:GetZoneColor()
 
-    local x, y = self:GetCoordinates()
+    local mapID = C_Map.GetBestMapForUnit("player")
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
     local coordStr = ""
-    if x and y then
-        coordStr = string.format(" |cffffffff(%.1f, %.1f)|r", x, y)
+    if pos then
+        coordStr = string.format("(%.1f, %.1f)", pos.x * 100, pos.y * 100)
     end
     
-    self:SetText(color .. text .. "|r" .. coordStr)
+    self:SetFormattedText(nil, string.format("%s%s|r %s", color, text, coordStr))
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
-function LocationWidget:OpenTravelMenu()
-    if not addon.Menu then return end
+function LocationWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateButton("Toggle World Map", function() ToggleWorldMap() end)
 
-    local items = {}
+    local travel = rootDescription:CreateButton("Travel")
 
-    -- Hearthstones & Toys
     local toys = {
         { id = 6948, name = "Hearthstone" },
         { id = 110560, name = "Garrison Hearthstone" },
         { id = 140192, name = "Dalaran Hearthstone" },
-        { id = 556, name = "Astral Recall" }, -- Shaman Spell (id check?)
+        { id = 556, name = "Astral Recall" },
     }
 
     for _, toy in ipairs(toys) do
         if PlayerHasToy(toy.id) or GetItemCount(toy.id) > 0 then
-            local name, link, _, _, _, _, _, _, _, icon = GetItemInfo(toy.id)
+            local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(toy.id)
             if name then
-                table.insert(items, {
-                    text = string.format("|T%s:14|t %s", icon, name),
-                    func = function()
-                        -- Secure action requires complex handling or out of combat
-                        -- For now, just print helper or try UseItemByName if allowed
-                        if not InCombatLockdown() then
-                            UseItemByName(name)
-                        else
-                            print("Cannot use in combat")
-                        end
+                travel:CreateButton(string.format("|T%s:14|t %s", icon, name), function()
+                    if not InCombatLockdown() then
+                        UseItemByName(name)
+                    else
+                        print("|cffff0000Cannot use in combat|r")
                     end
-                })
+                end)
             end
         end
     end
-
-    if #items == 0 then
-        table.insert(items, { text = "No Travel Items Found", func = nil })
-    end
-
-    addon.Menu:Open(self.frame, items)
 end
 
 function LocationWidget:ShowTooltip()
@@ -113,37 +94,22 @@ function LocationWidget:ShowTooltip()
     local zone = GetZoneText()
     local subZone = GetSubZoneText()
     local pvpType, _, factionName = GetZonePVPInfo()
-    local color = self:GetZoneColor()
     
     GameTooltip:AddDoubleLine("Zone:", zone, 1, 1, 1, 1, 1, 1)
     if subZone ~= "" and subZone ~= zone then
         GameTooltip:AddDoubleLine("Subzone:", subZone, 1, 1, 1, 1, 1, 1)
     end
-
-    GameTooltip:AddDoubleLine("PVP Status:", (pvpType or "Unknown"), 1, 1, 1, color)
-    if factionName and factionName ~= "" then
-        GameTooltip:AddDoubleLine("Controlled By:", factionName, 1, 1, 1, 1, 1, 1)
-    end
     
-    local x, y = self:GetCoordinates()
-    if x and y then
-        GameTooltip:AddLine(" ")
-        GameTooltip:AddDoubleLine("Coordinates:", string.format("%.2f, %.2f", x, y), 1, 1, 1, 1, 1, 1)
-    end
+    GameTooltip:AddDoubleLine("PVP Status:", (pvpType or "Unknown"), 1, 1, 1, 1, 1, 1)
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Left Click", "Open World Map", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:AddDoubleLine("Right Click", "Travel Menu", 0.7, 0.7, 0.7, 1, 1, 1)
 
     GameTooltip:Show()
 end
 
 function LocationWidget:OnClick(button)
-    if button == "RightButton" then
-        self:OpenTravelMenu()
-    else
-        ToggleWorldMap()
-    end
+    ToggleWorldMap()
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
@@ -151,28 +117,22 @@ end
 function LocationWidget:OnLoad()
     self:CreateFrame(150, 20)
 
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("ZONE_CHANGED")
-    self:RegisterEvent("ZONE_CHANGED_INDOORS")
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Coordinates ticker (every 0.5s)
     C_Timer.NewTicker(0.5, function() self:Update() end)
     
-    -- Register with manager
     self:Register()
-    
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

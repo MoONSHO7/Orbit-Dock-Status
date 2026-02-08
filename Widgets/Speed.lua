@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local SpeedWidget = addon.BaseWidget:New("Speed")
+local SpeedWidget = addon.BaseWidget:New("Speed"); addon.SpeedWidget.category = "World"
 addon.SpeedWidget = SpeedWidget
 
 -- [ HISTORY ] -----------------------------------------------------------------

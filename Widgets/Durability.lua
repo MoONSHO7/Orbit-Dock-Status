@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local DurabilityWidget = addon.BaseWidget:New("Durability")
+local DurabilityWidget = addon.BaseWidget:New("Durability"); addon.DurabilityWidget.category = "Character"
 addon.DurabilityWidget = DurabilityWidget
 
 -- [ SETTINGS ] ----------------------------------------------------------------
@@ -38,7 +38,6 @@ local SLOTS = {
 function DurabilityWidget:GetDurabilityInfo()
     local lowest = 100
     local slotInfo = {}
-    local totalRepairCost = 0
     
     for _, info in ipairs(SLOTS) do
         local slotId = GetInventorySlotInfo(info.slot)
@@ -48,30 +47,17 @@ function DurabilityWidget:GetDurabilityInfo()
                 local pct = (current / maximum) * 100
                 table.insert(slotInfo, {
                     name = info.name,
-                    pct = pct,
-                    current = current,
-                    max = maximum
+                    pct = pct
                 })
-                if pct < lowest then
-                    lowest = pct
-                end
+                if pct < lowest then lowest = pct end
             end
         end
     end
-    
     return lowest, slotInfo
 end
 
 function DurabilityWidget:GetColor(pct)
-    if pct <= 20 then
-        return "|cffff0000" -- Red
-    elseif pct <= 50 then
-        return "|cffffa500" -- Orange
-    elseif pct < 100 then
-        return "|cffffffff" -- White
-    else
-        return "|cff00ff00" -- Green (only for tooltip)
-    end
+    return addon.Formatting:GetColor(pct, 100, false)
 end
 
 -- [ UPDATES ] -----------------------------------------------------------------
@@ -79,21 +65,19 @@ end
 function DurabilityWidget:Update()
     local lowest, _ = self:GetDurabilityInfo()
     local color = self:GetColor(lowest)
-    
-    -- Contextual Visibility: Hide if 100% and not in Edit Mode
+
     if lowest >= 100 and not self.inEditMode then
         self.frame:Hide()
     else
         self.frame:Show()
-        self:SetText(string.format("%s%d%%|r Dur", color, lowest))
+        self:SetFormattedText("Durability:", string.format("%s%d%%|r", color, lowest))
     end
 end
 
 -- [ AUTO REPAIR ] -------------------------------------------------------------
 
 function DurabilityWidget:TryAutoRepair()
-    if not self.settings.autoRepair then return end
-    if not CanMerchantRepair() then return end
+    if not self.settings.autoRepair or not CanMerchantRepair() then return end
 
     local cost = GetRepairAllCost()
     if cost <= 0 then return end
@@ -101,7 +85,6 @@ function DurabilityWidget:TryAutoRepair()
     local money = GetMoney()
     local repaired = false
 
-    -- Try Guild Repair
     if self.settings.useGuild and IsInGuild() and CanGuildBankRepair() then
         local guildMoney = GetGuildBankWithdrawMoney()
         if guildMoney == -1 or guildMoney >= cost then
@@ -111,14 +94,10 @@ function DurabilityWidget:TryAutoRepair()
         end
     end
 
-    -- Fallback to Personal Repair
     if not repaired and money >= cost then
         RepairAllItems()
         repaired = true
-        local gold = math.floor(cost / 10000)
-        local silver = math.floor((cost % 10000) / 100)
-        local copper = cost % 100
-        print(string.format("|cff00ff00Auto-Repaired for %dg %ds %dc|r", gold, silver, copper))
+        print(string.format("|cff00ff00Auto-Repaired for %s|r", addon.Formatting:FormatMoney(cost, false)))
     end
 
     if not repaired then
@@ -128,25 +107,14 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
-function DurabilityWidget:OpenMenu()
-    if not addon.Menu then return end
+function DurabilityWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateCheckbox("Auto-Repair", function() return self.settings.autoRepair end, function()
+        self.settings.autoRepair = not self.settings.autoRepair
+    end)
 
-    local items = {
-        {
-            text = "Auto-Repair",
-            checked = self.settings.autoRepair,
-            func = function() self.settings.autoRepair = not self.settings.autoRepair end,
-            closeOnClick = false,
-        },
-        {
-            text = "Use Guild Funds",
-            checked = self.settings.useGuild,
-            func = function() self.settings.useGuild = not self.settings.useGuild end,
-            closeOnClick = false,
-        },
-    }
-
-    addon.Menu:Open(self.frame, items)
+    rootDescription:CreateCheckbox("Use Guild Funds", function() return self.settings.useGuild end, function()
+        self.settings.useGuild = not self.settings.useGuild
+    end)
 end
 
 function DurabilityWidget:ShowTooltip()
@@ -156,16 +124,12 @@ function DurabilityWidget:ShowTooltip()
     GameTooltip:AddLine(" ")
     
     local lowest, slotInfo = self:GetDurabilityInfo()
-    
     local shownAny = false
+
     for _, info in ipairs(slotInfo) do
         if info.pct < 100 then
-            local r, g, b = 1, 1, 1
-            if info.pct <= 20 then r, g, b = 1, 0, 0
-            elseif info.pct <= 50 then r, g, b = 1, 0.65, 0
-            end
-
-            GameTooltip:AddDoubleLine(info.name, string.format("%d%%", info.pct), 1, 1, 1, r, g, b)
+            local color = self:GetColor(info.pct)
+            GameTooltip:AddDoubleLine(info.name, color .. string.format("%d%%", info.pct) .. "|r", 1, 1, 1)
             shownAny = true
         end
     end
@@ -177,16 +141,11 @@ function DurabilityWidget:ShowTooltip()
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("Left Click", "Character Info", 0.7, 0.7, 0.7, 1, 1, 1)
     GameTooltip:AddDoubleLine("Right Click", "Settings", 0.7, 0.7, 0.7, 1, 1, 1)
-
     GameTooltip:Show()
 end
 
 function DurabilityWidget:OnClick(button)
-    if button == "RightButton" then
-        self:OpenMenu()
-    else
-        ToggleCharacter("PaperDollFrame")
-    end
+    ToggleCharacter("PaperDollFrame")
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
@@ -194,23 +153,19 @@ end
 function DurabilityWidget:OnLoad()
     self:CreateFrame(70, 20)
     
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    -- Register events
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("UPDATE_INVENTORY_DURABILITY")
     self:RegisterEvent("MERCHANT_SHOW", function() self:TryAutoRepair() end)
     
-    -- Register with manager
     self:Register()
-    
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

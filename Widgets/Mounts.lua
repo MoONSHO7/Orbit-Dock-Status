@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local MountsWidget = addon.BaseWidget:New("Mounts")
+local MountsWidget = addon.BaseWidget:New("Mounts"); addon.MountsWidget.category = "World"
 addon.MountsWidget = MountsWidget
 
 -- [ HELPER FUNCTIONS ] --------------------------------------------------------

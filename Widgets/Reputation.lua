@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local ReputationWidget = addon.BaseWidget:New("Reputation")
+local ReputationWidget = addon.BaseWidget:New("Reputation"); addon.ReputationWidget.category = "Character"
 addon.ReputationWidget = ReputationWidget
 
 -- [ STATE ] -------------------------------------------------------------------

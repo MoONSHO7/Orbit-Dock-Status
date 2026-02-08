@@ -10,15 +10,15 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local PerformanceWidget = addon.BaseWidget:New("Performance")
+local PerformanceWidget = addon.BaseWidget:New("Performance"); addon.PerformanceWidget.category = "System"
 addon.PerformanceWidget = PerformanceWidget
 
 -- [ CONSTANTS ] ---------------------------------------------------------------
 
 local COLORS = {
-    GREEN = "|cff00ff00",
-    YELLOW = "|cfffea300",
-    RED = "|cffff0000",
+    GREEN = { r = 0, g = 1, b = 0, a = 1 },
+    YELLOW = { r = 1, g = 0.8, b = 0, a = 1 },
+    RED = { r = 1, g = 0, b = 0, a = 1 },
 }
 
 -- [ HISTORY ] -----------------------------------------------------------------
@@ -28,20 +28,20 @@ PerformanceWidget.history = {
     latency = {},
     memory = {},
 }
-local HISTORY_SIZE = 60 -- Store last 60 seconds
+local HISTORY_SIZE = 60
 
 -- [ HELPER FUNCTIONS ] --------------------------------------------------------
 
-function PerformanceWidget:GetColor(value, threshold1, threshold2, reverse)
+function PerformanceWidget:GetColorHex(value, threshold1, threshold2, reverse)
     if reverse then
-        if value >= threshold2 then return COLORS.GREEN
-        elseif value >= threshold1 then return COLORS.YELLOW
-        else return COLORS.RED
+        if value >= threshold2 then return "|cff00ff00" -- Green
+        elseif value >= threshold1 then return "|cfffea300" -- Yellow
+        else return "|cffff0000" -- Red
         end
     else
-        if value <= threshold1 then return COLORS.GREEN
-        elseif value <= threshold2 then return COLORS.YELLOW
-        else return COLORS.RED
+        if value <= threshold1 then return "|cff00ff00"
+        elseif value <= threshold2 then return "|cfffea300"
+        else return "|cffff0000"
         end
     end
 end
@@ -63,11 +63,11 @@ function PerformanceWidget:Update()
 
     table.insert(self.history.memory, mem)
     if #self.history.memory > HISTORY_SIZE then table.remove(self.history.memory, 1) end
-
-    local fpsColor = self:GetColor(fps, 30, 60, true)
-    local msColor = self:GetColor(world, 100, 200, false)
     
-    self:SetText(string.format("%s%d|rfps %s%d|rms", fpsColor, math.floor(fps), msColor, world))
+    local fpsColor = self:GetColorHex(fps, 30, 60, true)
+    local msColor = self:GetColorHex(world, 100, 200, false)
+
+    self:SetFormattedText(nil, string.format("%s%d|rfps %s%d|rms", fpsColor, math.floor(fps), msColor, world))
 end
 
 function PerformanceWidget:OnEnable()
@@ -76,32 +76,35 @@ function PerformanceWidget:OnEnable()
 end
 
 function PerformanceWidget:OnDisable()
-    if self.timer then
-        self.timer:Cancel()
-        self.timer = nil
-    end
+    if self.timer then self.timer:Cancel(); self.timer = nil end
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
+
+function PerformanceWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateButton("Collect Garbage", function()
+        collectgarbage("collect")
+        print("|cff00ff00Memory Garbage Collected|r")
+        self:Update()
+    end)
+end
 
 function PerformanceWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("System Performance", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
-    
+
     local fps = GetFramerate()
     local _, _, home, world = GetNetStats()
     local mem = collectgarbage("count") / 1024
-    
+
     GameTooltip:AddDoubleLine("FPS:", string.format("%.1f", fps), 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine("Home Latency:", string.format("%dms", home), 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine("World Latency:", string.format("%dms", world), 1, 1, 1, 1, 1, 1)
     GameTooltip:AddDoubleLine("Memory:", string.format("%.2f MB", mem), 1, 1, 1, 1, 1, 1)
     
     GameTooltip:AddLine(" ")
-    
-    -- Addon CPU/Memory
     GameTooltip:AddLine("Top Addons (Memory):", 0.7, 0.7, 0.7)
 
     local addons = {}
@@ -132,25 +135,25 @@ function PerformanceWidget:ShowTooltip()
     
     GameTooltip:Show()
 
-    -- Draw Graph (Advanced Feature)
-    if not self.graphFrame then
-        self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
-        self.graphFrame:SetSize(200, 50)
+    -- Draw Graph (FPS)
+    if #self.history.fps > 2 then
+        if not self.graphFrame then
+            self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
+            self.graphFrame:SetSize(220, 60)
+            self.graph = addon.Graph:New(self.graphFrame, 220, 60)
+        end
+
+        self.graphFrame:SetParent(GameTooltip)
         self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
-        self.graph = addon.Graph:New(self.graphFrame, 200, 50)
-    end
+        self.graphFrame:Show()
 
-    self.graphFrame:SetParent(GameTooltip)
-    self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
-    self.graphFrame:Show()
-
-    -- Which graph to show? FPS for now
-    self.graph:Clear()
-    self.graph:SetColor(0, 1, 0, 1) -- Green
-    for _, val in ipairs(self.history.fps) do
-        self.graph:AddData(val)
+        self.graph:Clear()
+        self.graph:SetColor(COLORS.GREEN)
+        for _, val in ipairs(self.history.fps) do
+            self.graph:AddData(val)
+        end
+        self.graph:Draw()
     end
-    self.graph:Draw()
 end
 
 function PerformanceWidget:OnClick(button)
@@ -164,18 +167,15 @@ end
 function PerformanceWidget:OnLoad()
     self:CreateFrame(120, 20)
     
-    -- Setup handlers
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register with manager
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:Register()
-    
-    -- Start loop
     self:Enable()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

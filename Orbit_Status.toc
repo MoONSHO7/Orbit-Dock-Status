@@ -26,7 +26,6 @@ Core\StatusDock.lua
 
 # Widgets
 Widgets\BaseWidget.lua
-Widgets\Menu.lua
 Widgets\WidgetManager.lua
 Widgets\Volume.lua
 Widgets\Performance.lua
@@ -55,3 +54,4 @@ Widgets\Reputation.lua
 Widgets\Experience.lua
 Widgets\Missions.lua
 Widgets\Mounts.lua
+Widgets\Weekly.lua

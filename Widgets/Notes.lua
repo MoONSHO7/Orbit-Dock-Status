@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local NotesWidget = addon.BaseWidget:New("Notes")
+local NotesWidget = addon.BaseWidget:New("Notes"); addon.NotesWidget.category = "System"
 addon.NotesWidget = NotesWidget
 
 -- [ SETTINGS ] ----------------------------------------------------------------

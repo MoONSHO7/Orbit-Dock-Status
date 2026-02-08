@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local GroupWidget = addon.BaseWidget:New("Group")
+local GroupWidget = addon.BaseWidget:New("Group"); addon.GroupWidget.category = "Social"
 addon.GroupWidget = GroupWidget
 
 -- [ HELPER ] ------------------------------------------------------------------
@@ -25,11 +25,9 @@ function GroupWidget:GetGroupInfo()
 
     local prefix = IsInRaid() and "raid" or "party"
 
-    -- Iterate members
     for i = 1, total do
         local unit = prefix .. i
         if prefix == "party" and i == total then unit = "player" end
-
         local role = UnitGroupRolesAssigned(unit)
         if role == "TANK" then tanks = tanks + 1
         elseif role == "HEALER" then healers = healers + 1
@@ -46,49 +44,36 @@ function GroupWidget:Update()
     local total, t, h, d = self:GetGroupInfo()
 
     if total == 0 then
-        self:SetText("Solo")
+        self:SetFormattedText(nil, "Solo")
     else
-        -- Format: T/H/D
-        self:SetText(string.format("|cff00aaff%d|r/|cff00ff00%d|r/|cffff0000%d|r (%d)", t, h, d, total))
+        self:SetFormattedText(nil, string.format("|cff00aaff%d|r/|cff00ff00%d|r/|cffff0000%d|r (%d)", t, h, d, total))
     end
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
-function GroupWidget:OpenMenu()
-    if not addon.Menu then return end
-
-    local items = {}
-
-    if IsInGroup() then
-        if UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") then
-            table.insert(items, {
-                text = "Ready Check",
-                func = function() DoReadyCheck() end,
-            })
-            table.insert(items, {
-                text = "Role Check",
-                func = function() InitiateRolePoll() end,
-            })
-
-            local difficulty = GetDungeonDifficultyID()
-            -- Add difficulty toggle?
-        end
-
-        table.insert(items, {
-            text = "Leave Group",
-            func = function() LeaveParty() end,
-        })
-
-        if not IsInRaid() and UnitIsGroupLeader("player") then
-             table.insert(items, {
-                text = "Convert to Raid",
-                func = function() ConvertToRaid() end,
-            })
-        end
+function GroupWidget:GenerateMenu(owner, rootDescription)
+    if not IsInGroup() then
+        rootDescription:CreateTitle("Not in Group")
+        rootDescription:CreateButton("Open Group Finder", function() PVEFrame_ToggleFrame() end)
+        return
     end
 
-    addon.Menu:Open(self.frame, items)
+    if UnitIsGroupLeader("player") or UnitIsGroupAssistant("player") then
+        rootDescription:CreateTitle("Management")
+        rootDescription:CreateButton("Ready Check", function() DoReadyCheck() end)
+        rootDescription:CreateButton("Role Check", function() InitiateRolePoll() end)
+
+        -- Difficulty Submenu (Simplified)
+        -- local diff = rootDescription:CreateButton("Difficulty")
+        -- diff:CreateRadio("Normal", ...)
+    end
+
+    rootDescription:CreateButton("Leave Group", function() LeaveParty() end)
+
+    if not IsInRaid() and UnitIsGroupLeader("player") then
+        rootDescription:CreateButton("Convert to Raid", function() ConvertToRaid() end)
+    end
 end
 
 function GroupWidget:ShowTooltip()
@@ -117,11 +102,7 @@ function GroupWidget:ShowTooltip()
 end
 
 function GroupWidget:OnClick(button)
-    if button == "RightButton" then
-        self:OpenMenu()
-    else
-        PVEFrame_ToggleFrame()
-    end
+    PVEFrame_ToggleFrame()
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
@@ -129,24 +110,20 @@ end
 function GroupWidget:OnLoad()
     self:CreateFrame(100, 20)
 
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("GROUP_ROSTER_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("READY_CHECK")
 
-    -- Register with manager
     self:Register()
-
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

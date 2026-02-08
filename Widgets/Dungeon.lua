@@ -12,6 +12,7 @@ if not addon.BaseWidget then return end
 
 local DungeonWidget = addon.BaseWidget:New("Dungeon")
 addon.DungeonWidget = DungeonWidget
+DungeonWidget.category = "World"
 
 -- [ HELPER FUNCTIONS ] --------------------------------------------------------
 
@@ -27,20 +28,9 @@ function DungeonWidget:GetSavedInstances()
     return saved
 end
 
-function DungeonWidget:GetWorldBosses()
-    local bosses = {}
-    -- Simplified: Check standard world boss quest IDs if known, or iterate UI map
-    -- For now, placeholder or check saved instances if they appear there
-    return bosses
-end
-
 function DungeonWidget:GetKeystone()
-    -- Scan bags for Keystone (Item ID 138019 or similar for current expac)
-    -- Dragonflight Keystone ID: 180653?
-    -- Better: C_MythicPlus.GetOwnedKeystoneChallengeMapID()
     local mapID = C_MythicPlus.GetOwnedKeystoneChallengeMapID()
     local level = C_MythicPlus.GetOwnedKeystoneLevel()
-
     if mapID and level then
         local mapName = C_ChallengeMode.GetMapUIInfo(mapID)
         return mapName, level
@@ -49,12 +39,10 @@ function DungeonWidget:GetKeystone()
 end
 
 function DungeonWidget:GetGreatVault()
-    -- C_WeeklyRewards
     local activities = C_WeeklyRewards.GetActivities()
     local raids = 0
     local mythic = 0
     local pvp = 0
-
     for _, activity in ipairs(activities) do
         if activity.type == Enum.WeeklyRewardChestThresholdType.Raid then
             if activity.progress >= activity.threshold then raids = raids + 1 end
@@ -64,7 +52,6 @@ function DungeonWidget:GetGreatVault()
             if activity.progress >= activity.threshold then pvp = pvp + 1 end
         end
     end
-
     return raids, mythic, pvp
 end
 
@@ -72,15 +59,22 @@ end
 
 function DungeonWidget:Update()
     local mapName, level = self:GetKeystone()
-
     if mapName then
-        self:SetText(string.format("|cff00ff00+%d|r %s", level, mapName))
+        self:SetFormattedText("Key:", string.format("|cff00ff00+%d|r %s", level, mapName))
     else
-        self:SetText("No Key")
+        self:SetFormattedText("Key:", "None")
     end
 end
 
 -- [ INTERACTION ] -------------------------------------------------------------
+
+function DungeonWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateButton("Open Group Finder", function() PVEFrame_ToggleFrame() end)
+    rootDescription:CreateButton("Open Adventure Guide", function() ToggleEncounterJournal() end)
+    rootDescription:CreateButton("Open Great Vault", function()
+        if WeeklyRewardsFrame then ShowUIPanel(WeeklyRewardsFrame) else LoadAddOn("Blizzard_WeeklyRewards"); ShowUIPanel(WeeklyRewardsFrame) end
+    end)
+end
 
 function DungeonWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -134,26 +128,22 @@ end
 function DungeonWidget:OnLoad()
     self:CreateFrame(120, 20)
 
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("UPDATE_INSTANCE_INFO")
-    self:RegisterEvent("BAG_UPDATE") -- For keystone check
+    self:RegisterEvent("BAG_UPDATE")
     self:RegisterEvent("CHALLENGE_MODE_START")
     self:RegisterEvent("CHALLENGE_MODE_COMPLETED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Register with manager
     self:Register()
-
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

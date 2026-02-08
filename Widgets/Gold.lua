@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local GoldWidget = addon.BaseWidget:New("Gold")
+local GoldWidget = addon.BaseWidget:New("Gold"); addon.GoldWidget.category = "Economy"
 addon.GoldWidget = GoldWidget
 
 -- [ SETTINGS ] ----------------------------------------------------------------
@@ -22,39 +22,18 @@ GoldWidget.settings = {
 -- [ HISTORY ] -----------------------------------------------------------------
 
 GoldWidget.history = {}
-local HISTORY_SIZE = 60 -- Store last 60 minutes? Or simpler: Session snapshots
+local HISTORY_SIZE = 60
 
 -- [ FORMATTING ] --------------------------------------------------------------
 
 function GoldWidget:FormatMoney(copper, full)
-    local gold = math.floor(copper / 10000)
-    local silver = math.floor((copper % 10000) / 100)
-    local cop = copper % 100
-    
-    if full then
-        return string.format("|cffffd700%d|r gold |cffc0c0c0%d|r silver |cffeda55f%d|r copper", gold, silver, cop)
-    end
-
-    -- Smart formatting for bar display
-    if gold >= 1000000 then
-        return string.format("|cffffd700%.2fm|r", gold / 1000000)
-    elseif gold >= 1000 then
-        return string.format("|cffffd700%.1fk|r", gold / 1000)
-    elseif gold > 0 then
-        return string.format("|cffffd700%d|rg |cffc0c0c0%d|rs", gold, silver)
-    else
-        return string.format("|cffc0c0c0%d|rs |cffeda55f%d|rc", silver, cop)
-    end
+    return addon.Formatting:FormatMoney(copper, full)
 end
 
 function GoldWidget:FormatProfit(profit)
-    local color = "|cff00ff00+" -- Green for positive
-    if profit < 0 then
-        color = "|cffff0000" -- Red for negative
-    elseif profit == 0 then
-        color = "|cffffffff" -- White for zero
-    end
-
+    local color = "|cff00ff00+"
+    if profit < 0 then color = "|cffff0000"
+    elseif profit == 0 then color = "|cffffffff" end
     return color .. self:FormatMoney(math.abs(profit), false)
 end
 
@@ -62,10 +41,9 @@ end
 
 function GoldWidget:Update()
     local money = GetMoney()
-    self:SetText(self:FormatMoney(money))
+    -- New Standard: Label Value
+    self:SetFormattedText(nil, self:FormatMoney(money))
 
-    -- Store history every minute? Or just on change
-    -- For session graph, we want delta over time
     local time = GetTime()
     if not self.lastHistoryTime or (time - self.lastHistoryTime) > 60 then
         table.insert(self.history, money)
@@ -100,27 +78,16 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
-function GoldWidget:OpenMenu()
-    if not addon.Menu then return end
+function GoldWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateCheckbox("Auto-Sell Grey Items", function() return self.settings.autoSell end, function()
+        self.settings.autoSell = not self.settings.autoSell
+    end)
 
-    local items = {
-        {
-            text = "Auto-Sell Grey Items",
-            checked = self.settings.autoSell,
-            func = function() self.settings.autoSell = not self.settings.autoSell end,
-            closeOnClick = false,
-        },
-        {
-            text = "Reset Session Data",
-            func = function()
-                self.sessionStart = GetMoney()
-                self.history = {}
-                self:Update()
-            end,
-        },
-    }
-
-    addon.Menu:Open(self.frame, items)
+    rootDescription:CreateButton("Reset Session Data", function()
+        self.sessionStart = GetMoney()
+        self.history = {}
+        self:Update()
+    end)
 end
 
 function GoldWidget:ShowTooltip()
@@ -135,18 +102,24 @@ function GoldWidget:ShowTooltip()
     local profit = current - (self.sessionStart or current)
     GameTooltip:AddDoubleLine("Session:", self:FormatProfit(profit), 1, 1, 1, 1, 1, 1)
     
+    -- Token Price (Modern API)
+    local tokenPrice = C_WowTokenPublic.GetCurrentMarketPrice()
+    if tokenPrice then
+        GameTooltip:AddDoubleLine("WoW Token:", self:FormatMoney(tokenPrice, false), 1, 1, 1, 1, 1, 1)
+    end
+
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("Left Click", "Open Bags", 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Right Click", "Settings", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Options", 0.7, 0.7, 0.7, 1, 1, 1)
     
     GameTooltip:Show()
 
-    -- Draw Graph
+    -- Graph
     if #self.history > 2 then
         if not self.graphFrame then
             self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
-            self.graphFrame:SetSize(200, 50)
-            self.graph = addon.Graph:New(self.graphFrame, 200, 50)
+            self.graphFrame:SetSize(220, 60)
+            self.graph = addon.Graph:New(self.graphFrame, 220, 60)
         end
 
         self.graphFrame:SetParent(GameTooltip)
@@ -159,45 +132,36 @@ function GoldWidget:ShowTooltip()
             self.graph:AddData(val)
         end
         self.graph:Draw()
-    elseif self.graphFrame then
-        self.graphFrame:Hide()
     end
 end
 
 function GoldWidget:OnClick(button)
-    if button == "RightButton" then
-        self:OpenMenu()
-    else
-        ToggleAllBags()
-    end
+    ToggleAllBags()
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function GoldWidget:OnLoad()
     self:CreateFrame()
-    
-    -- Initialize session start
     self.sessionStart = GetMoney()
     
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+    -- Modern Menu Registration
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("PLAYER_MONEY")
-    self:RegisterEvent("PLAYER_ENTERING_WORLD") -- Ensure money is loaded
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
     self:RegisterEvent("MERCHANT_SHOW", function() self:AutoSellJunk() end)
     
-    -- Register with manager
     self:Register()
-    
-    -- Initial update
     self:Update()
+
+    C_WowTokenPublic.UpdateMarketPrice() -- Request token price
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()

@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local ProfessionsWidget = addon.BaseWidget:New("Professions")
+local ProfessionsWidget = addon.BaseWidget:New("Professions"); addon.ProfessionsWidget.category = "Economy"
 addon.ProfessionsWidget = ProfessionsWidget
 
 -- [ HELPER ] ------------------------------------------------------------------

@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local CombatTimerWidget = addon.BaseWidget:New("CombatTimer")
+local CombatTimerWidget = addon.BaseWidget:New("CombatTimer"); addon.CombatTimerWidget.category = "Combat"
 addon.CombatTimerWidget = CombatTimerWidget
 
 -- [ STATE ] -------------------------------------------------------------------

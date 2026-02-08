@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local BuffsWidget = addon.BaseWidget:New("Buffs")
+local BuffsWidget = addon.BaseWidget:New("Buffs"); addon.BuffsWidget.category = "Combat"
 addon.BuffsWidget = BuffsWidget
 
 -- [ HELPERS ] -----------------------------------------------------------------

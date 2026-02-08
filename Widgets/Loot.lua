@@ -10,7 +10,7 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local LootWidget = addon.BaseWidget:New("Loot")
+local LootWidget = addon.BaseWidget:New("Loot"); addon.LootWidget.category = "System"
 addon.LootWidget = LootWidget
 
 -- [ SETTINGS ] ----------------------------------------------------------------
@@ -20,8 +20,6 @@ LootWidget.settings = {
     speedLoot = true,
 }
 
--- [ STATE ] -------------------------------------------------------------------
-
 LootWidget.lastItem = nil
 LootWidget.lastItemTime = 0
 
@@ -29,39 +27,27 @@ LootWidget.lastItemTime = 0
 
 function LootWidget:HandleLoot()
     if not self.settings.speedLoot then return end
-
     local numItems = GetNumLootItems()
     if numItems > 0 then
-        -- Loot everything instantly
-        for i = numItems, 1, -1 do
-            LootSlot(i)
-        end
+        for i = numItems, 1, -1 do LootSlot(i) end
     end
 end
 
 -- [ UPDATES ] -----------------------------------------------------------------
 
 function LootWidget:Update()
-    local text = "Loot: "
-    if self.settings.autoLoot then
-        text = text .. "|cff00ff00Auto|r"
-    else
-        text = text .. "|cff888888Manual|r"
-    end
-
+    local text = self.settings.autoLoot and "|cff00ff00Auto|r" or "|cff888888Manual|r"
     if self.lastItem then
         text = text .. " " .. self.lastItem
     end
-
-    self:SetText(text)
+    self:SetFormattedText("Loot:", text)
 end
 
-function LootWidget:OnLootReceived(itemLink, quantity)
+function LootWidget:OnLootReceived(itemLink)
     self.lastItem = itemLink
     self.lastItemTime = GetTime()
     self:Update()
 
-    -- Clear after 10s
     C_Timer.After(10, function()
         if GetTime() - self.lastItemTime >= 10 then
             self.lastItem = nil
@@ -72,29 +58,16 @@ end
 
 -- [ INTERACTION ] -------------------------------------------------------------
 
-function LootWidget:OpenMenu()
-    if not addon.Menu then return end
+function LootWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateCheckbox("Auto Loot", function() return self.settings.autoLoot end, function()
+        self.settings.autoLoot = not self.settings.autoLoot
+        SetCVar("autoLootDefault", self.settings.autoLoot and "1" or "0")
+        self:Update()
+    end)
 
-    local items = {
-        {
-            text = "Auto Loot",
-            checked = self.settings.autoLoot,
-            func = function()
-                self.settings.autoLoot = not self.settings.autoLoot
-                SetCVar("autoLootDefault", self.settings.autoLoot and "1" or "0")
-                self:Update()
-            end,
-            closeOnClick = false,
-        },
-        {
-            text = "Speed Loot",
-            checked = self.settings.speedLoot,
-            func = function() self.settings.speedLoot = not self.settings.speedLoot end,
-            closeOnClick = false,
-        },
-    }
-
-    addon.Menu:Open(self.frame, items)
+    rootDescription:CreateCheckbox("Speed Loot", function() return self.settings.speedLoot end, function()
+        self.settings.speedLoot = not self.settings.speedLoot
+    end)
 end
 
 function LootWidget:ShowTooltip()
@@ -119,40 +92,30 @@ function LootWidget:ShowTooltip()
 end
 
 function LootWidget:OnClick(button)
-    if button == "RightButton" then
-        self:OpenMenu()
-    end
+    -- Left click?
 end
 
 -- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function LootWidget:OnLoad()
     self:CreateFrame(120, 20)
-
-    -- Sync CVar
     self.settings.autoLoot = GetCVar("autoLootDefault") == "1"
 
-    -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
     self:RegisterEvent("LOOT_READY", function() self:HandleLoot() end)
     self:RegisterEvent("CHAT_MSG_LOOT", function(_, msg)
-        -- Parse link? Simplify: Just listen for item
-        -- Or rely on LOOT_OPENED? No, LOOT_OPENED is for window.
-        -- Use pattern matching on msg
+        -- Placeholder item parsing
     end)
 
-    -- Register with manager
     self:Register()
-
-    -- Initial update
     self:Update()
 end
 
--- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
