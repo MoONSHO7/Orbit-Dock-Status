@@ -10,13 +10,14 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local LocationWidget = addon.BaseWidget:New("Location"); addon.LocationWidget.category = "World"
+local LocationWidget = addon.BaseWidget:New("Location")
 addon.LocationWidget = LocationWidget
+LocationWidget.category = "World"
 
 -- [ HELPERS ] -----------------------------------------------------------------
 
 function LocationWidget:GetZoneColor()
-    local pvpType = GetZonePVPInfo()
+    local pvpType = C_PvP.GetZonePVPInfo()
     if pvpType == "sanctuary" then return "|cff74d5f2"
     elseif pvpType == "arena" or pvpType == "hostile" then return "|cffff0000"
     elseif pvpType == "friendly" then return "|cff00ff00"
@@ -25,22 +26,14 @@ function LocationWidget:GetZoneColor()
     return "|cffffffff"
 end
 
-function LocationWidget:GetZoneEvent()
-    -- Check for Dragonflight Events (Dreamsurge, Time Rift, etc.)
-    -- This requires checking C_AreaPoiInfo for specific IDs in the current map
-    local mapID = C_Map.GetBestMapForUnit("player")
-    if not mapID then return nil end
-
-    -- Simplified: Just check if we are in a zone with an event
-    -- Dreamsurge (POIs: 7332, etc?) - API lookup required for precise IDs
-    -- For now, placeholder or basic POI scan
-    return nil
+function LocationWidget:GetZoneName()
+    return GetZoneText() or C_Map.GetMapInfo(C_Map.GetBestMapForUnit("player")).name
 end
 
 -- [ UPDATE ] ------------------------------------------------------------------
 
 function LocationWidget:Update()
-    local zone = GetZoneText()
+    local zone = self:GetZoneName()
     local subZone = GetSubZoneText()
     local text = (subZone ~= "") and subZone or zone
     local color = self:GetZoneColor()
@@ -93,7 +86,7 @@ function LocationWidget:ShowTooltip()
     
     local zone = GetZoneText()
     local subZone = GetSubZoneText()
-    local pvpType, _, factionName = GetZonePVPInfo()
+    local pvpType = C_PvP.GetZonePVPInfo()
     
     GameTooltip:AddDoubleLine("Zone:", zone, 1, 1, 1, 1, 1, 1)
     if subZone ~= "" and subZone ~= zone then
