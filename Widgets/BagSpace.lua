@@ -1,5 +1,6 @@
 -- BagSpace.lua
--- Bag space widget for StatusDock
+-- Advanced Bag Space widget for StatusDock
+-- Features: Free slots, Reagent Bag breakdown, Threshold alerts
 
 local _, addon = ...
 
@@ -7,171 +8,114 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local BagSpaceWidget = {}
+if not addon.BaseWidget then return end
+
+local BagSpaceWidget = addon.BaseWidget:New("BagSpace")
 addon.BagSpaceWidget = BagSpaceWidget
+BagSpaceWidget.category = "Character"
 
-local widgetFrame = nil
+-- [ HELPER FUNCTIONS ] --------------------------------------------------------
 
-local function GetBagSpace()
-    local free, total = 0, 0
-    for bag = 0, 4 do
-        local numSlots = C_Container.GetContainerNumSlots(bag)
-        local freeSlots = C_Container.GetContainerNumFreeSlots(bag)
-        total = total + numSlots
-        free = free + freeSlots
+function BagSpaceWidget:GetBagInfo()
+    local free = 0
+    local total = 0
+    local reagentFree = 0
+    local reagentTotal = 0
+
+    -- Iterate bags 0-4 (Backpack + 4 Bags)
+    for i = 0, NUM_BAG_SLOTS do
+        local bagFree = C_Container.GetContainerNumFreeSlots(i)
+        local bagTotal = C_Container.GetContainerNumSlots(i)
+        free = free + bagFree
+        total = total + bagTotal
     end
-    return free, total
+
+    -- Check Reagent Bag (Slot 5 in Dragonflight+)
+    local reagentBagID = NUM_BAG_SLOTS + 1
+    if C_Container.GetContainerNumSlots(reagentBagID) > 0 then
+        local rFree = C_Container.GetContainerNumFreeSlots(reagentBagID)
+        local rTotal = C_Container.GetContainerNumSlots(reagentBagID)
+        reagentFree = rFree
+        reagentTotal = rTotal
+    end
+
+    return free, total, reagentFree, reagentTotal
 end
 
-local function UpdateBagSpace()
-    if not widgetFrame then return end
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function BagSpaceWidget:Update()
+    local free, total, rFree, rTotal = self:GetBagInfo()
     
-    local free, total = GetBagSpace()
-    local used = total - free
+    local pct = 0
+    if total > 0 then pct = (free / total) * 100 end
+    local color = addon.Formatting:GetColor(pct, 100, false) -- Red if low space
     
-    local color = "|cffffffff"
-    if free < 5 then
-        color = "|cffff0000"
-    elseif free < 15 then
-        color = "|cfffea300"
-    end
-    
-    widgetFrame.Text:SetText(string.format("%s%d|r/%d", color, used, total))
-    
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 10, 20)
+    self:SetFormattedText("Bags:", string.format("%s%d|r/%d", color, free, total))
 end
 
-local function ShowTooltip(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function BagSpaceWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateButton("Toggle Bags", function() ToggleAllBags() end)
+    rootDescription:CreateButton("Sort Bags", function() C_Container.SortBags() end)
+
+    if C_Container.GetContainerNumSlots(NUM_BAG_SLOTS + 1) > 0 then
+        rootDescription:CreateButton("Sort Reagent Bag", function() C_Container.SortReagentBankBags() end)
+    end
+end
+
+function BagSpaceWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Bag Space", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
     
-    local free, total = GetBagSpace()
+    local free, total, rFree, rTotal = self:GetBagInfo()
     local used = total - free
     
-    GameTooltip:AddDoubleLine("Used Slots:", string.format("%d", used), 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Free Slots:", string.format("%d", free), 0.7, 0.7, 0.7, 0, 1, 0)
-    GameTooltip:AddDoubleLine("Total Slots:", string.format("%d", total), 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddLine(" ")
-    
-    -- Per-bag breakdown
-    GameTooltip:AddLine("Per Bag:", 0.7, 0.7, 0.7)
-    for bag = 0, 4 do
-        local numSlots = C_Container.GetContainerNumSlots(bag)
-        local freeSlots = C_Container.GetContainerNumFreeSlots(bag)
-        if numSlots > 0 then
-            local bagName = bag == 0 and "Backpack" or string.format("Bag %d", bag)
-            GameTooltip:AddDoubleLine(bagName, string.format("%d/%d", numSlots - freeSlots, numSlots), 0.5, 0.5, 0.5, 1, 1, 1)
-        end
+    GameTooltip:AddDoubleLine("Normal Bags:", string.format("%d / %d", used, total), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Free Space:", string.format("%d", free), 1, 1, 1, 0, 1, 0)
+
+    if rTotal > 0 then
+        GameTooltip:AddLine(" ")
+        GameTooltip:AddLine("Reagent Bag:", 0.7, 0.7, 0.7)
+        local rUsed = rTotal - rFree
+        GameTooltip:AddDoubleLine("Used:", string.format("%d / %d", rUsed, rTotal), 1, 1, 1, 1, 1, 1)
+        GameTooltip:AddDoubleLine("Free:", string.format("%d", rFree), 1, 1, 1, 0, 1, 0)
     end
     
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Open Bags", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Open Bags", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Options", 0.7, 0.7, 0.7, 1, 1, 1)
+
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+function BagSpaceWidget:OnClick(button)
+    ToggleAllBags()
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusBagSpaceWidget", UIParent)
-    f:SetSize(60, 20)
-    f:SetClampedToScreen(true)
-    f.editModeName = "Bag Space"
-    
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = 12 })
-    end
-    
-    -- No default position - WidgetManager places in drawer
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", ShowTooltip)
-    f:SetScript("OnLeave", HideTooltip)
-    
-    -- Click to open bags
-    f:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and not self.isDragging then
-            ToggleAllBags()
-        end
-    end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WM = addon.WidgetManager
-        if not WM or not WM:OnWidgetDragStart("BagSpace") then
-            return  -- Block drag if drawer isn't open
-        end
-        self.isDragging = true
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")
-        self:StartMoving()
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM2 = addon.WidgetManager
-                if WM2 then WM2:OnWidgetDragUpdate() end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self.isDragging = false
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        local WM = addon.WidgetManager
-        if WM then WM:OnWidgetDragStop("BagSpace") end
-    end)
-    
-    f:RegisterForDrag("LeftButton")
-    return f
-end
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function BagSpaceWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(100, 20)
     
-    -- Create event frame for bag updates
-    local eventFrame = CreateFrame("Frame")
-    self.eventFrame = eventFrame
+    self:SetUpdateFunc(function() self:Update() end)
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    local WM = addon.WidgetManager
-    if WM then
-        WM:Register("BagSpace", {
-            name = "Bag Space",
-            frame = widgetFrame,
-            onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
-            onUndock = function(f) UpdateBagSpace() end,
-            onEnable = function(f)
-                -- Re-register bag event and update display
-                eventFrame:RegisterEvent("BAG_UPDATE")
-                UpdateBagSpace()
-            end,
-            onDisable = function(f)
-                -- Unregister event to save resources
-                eventFrame:UnregisterEvent("BAG_UPDATE")
-            end,
-        })
-    end
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
+    self:RegisterEvent("BAG_UPDATE")
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
     
-    eventFrame:RegisterEvent("BAG_UPDATE")
-    eventFrame:SetScript("OnEvent", UpdateBagSpace)
-    
-    UpdateBagSpace()
-    widgetFrame:Show()
+    self:Register()
+    self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    C_Timer.After(0.5, function() BagSpaceWidget:OnLoad() end)
+    C_Timer.After(1, function() BagSpaceWidget:OnLoad() end)
 end)

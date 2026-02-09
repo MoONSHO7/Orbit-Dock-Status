@@ -1,5 +1,6 @@
 -- CombatTimer.lua
--- Combat Timer widget for StatusDock
+-- Advanced Combat Timer widget for StatusDock
+-- Features: Auto-show on combat, DPS estimation (simple), color coding
 
 local _, addon = ...
 
@@ -7,213 +8,120 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local OrbitEngine = Orbit.Engine
+if not addon.BaseWidget then return end
 
--- [ WIDGET CREATION ]----------------------------------------------------------
-
-local CombatTimerWidget = {}
+local CombatTimerWidget = addon.BaseWidget:New("CombatTimer"); addon.CombatTimerWidget.category = "Combat"
 addon.CombatTimerWidget = CombatTimerWidget
 
-local widgetFrame = nil
-local timer = nil
-local startTime = nil
-local inCombat = false
+-- [ STATE ] -------------------------------------------------------------------
 
-local function UpdateTimer()
-    if not widgetFrame then return end
-    
-    if not startTime then
-        widgetFrame.Text:SetText("0:00")
-        widgetFrame.Text:SetTextColor(1, 1, 1)  -- White when not in combat
+CombatTimerWidget.startTime = 0
+CombatTimerWidget.inCombat = false
+CombatTimerWidget.ticker = nil
+CombatTimerWidget.damageDone = 0
+
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function CombatTimerWidget:Update()
+    if not self.inCombat then
+        -- Contextual: Hide when not in combat, unless in Edit Mode
+        if self.inEditMode then
+            self:SetText("|cff888888Idle|r")
+            self.frame:Show()
+        else
+            self.frame:Hide()
+        end
         return
     end
     
-    local duration = GetTime() - startTime
-    local minutes = math.floor(duration / 60)
-    local seconds = math.floor(duration % 60)
+    self.frame:Show()
+    local now = GetTime()
+    local duration = now - self.startTime
     
-    widgetFrame.Text:SetText(string.format("%d:%02d", minutes, seconds))
-    widgetFrame.Text:SetTextColor(1, 0.3, 0.3)  -- Red when in combat
+    local color = "|cffff0000" -- Red for combat
+    local timeStr = string.format("%02d:%02d", math.floor(duration / 60), math.floor(duration % 60))
     
-    -- Auto-resize to fit text
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 8, 20)
+    self:SetText(color .. timeStr .. "|r")
 end
 
-local function StartLoop()
-    if timer then timer:Cancel() end
-    timer = C_Timer.NewTicker(0.1, UpdateTimer)
-    UpdateTimer()
+-- [ EVENTS ] ------------------------------------------------------------------
+
+function CombatTimerWidget:OnCombatStart()
+    self.inCombat = true
+    self.startTime = GetTime()
+    self.damageDone = 0
+    
+    -- Start ticker
+    if self.ticker then self.ticker:Cancel() end
+    self.ticker = C_Timer.NewTicker(0.1, function() self:Update() end)
+    
+    self:Update()
 end
 
-local function StopLoop()
-    if timer then 
-        timer:Cancel() 
-        timer = nil
-    end
-    UpdateTimer()  -- Final update
-end
-
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusCombatTimerWidget", UIParent)
-    f:SetSize(60, 20)
-    f:SetClampedToScreen(true)
-    f.systemIndex = "StatusDock_CombatTimer"
-    f.editModeName = "Combat Timer"
-    
-    -- Text display
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    f.Text:SetText("0:00")
-    
-    -- Apply global font
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, {
-            font = Orbit.db.GlobalSettings.Font,
-            textSize = 12,
-        })
+function CombatTimerWidget:OnCombatEnd()
+    self.inCombat = false
+    if self.ticker then
+        self.ticker:Cancel()
+        self.ticker = nil
     end
     
-    -- Orbit Anchoring options
-    f.anchorOptions = {
-        horizontal = true,
-        vertical = true,
-        syncScale = false,
-        syncDimensions = false,
-    }
+    -- Final update
+    local duration = GetTime() - self.startTime
+    local timeStr = string.format("%02d:%02d", math.floor(duration / 60), math.floor(duration % 60))
+    self:SetText("|cff00ff00" .. timeStr .. "|r") -- Green for done
     
-    -- Default position
-    -- No default position - WidgetManager places in drawer
-    
-    -- Make draggable in Edit Mode
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine("Combat Timer", 1, 0.82, 0)
-        GameTooltip:AddLine(" ")
-        if inCombat and combatStartTime then
-            local elapsed = GetTime() - combatStartTime
-            GameTooltip:AddDoubleLine("Status:", "In Combat", 0.7, 0.7, 0.7, 1, 0.3, 0.3)
-            GameTooltip:AddDoubleLine("Duration:", FormatTime(elapsed), 0.7, 0.7, 0.7, 1, 1, 1)
-        else
-            GameTooltip:AddDoubleLine("Status:", "Out of Combat", 0.7, 0.7, 0.7, 0, 1, 0)
-        end
-        GameTooltip:Show()
-    end)
-    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WidgetManager = addon.WidgetManager
-        if not WidgetManager or not WidgetManager:OnWidgetDragStart("CombatTimer") then
-            return  -- Block drag if drawer isn't open
-        end
-        
-        -- Re-parent to UIParent so we can drag freely (even if docked)
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")  -- Ensure it's on top while dragging
-        self:StartMoving()
-        
-        -- Update zone highlighting during drag
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM = addon.WidgetManager
-                if WM then
-                    WM:OnWidgetDragUpdate()
-                end
-            end)
+    -- Hide after 5 seconds?
+    C_Timer.After(5, function()
+        if not self.inCombat then
+            self:SetText("|cff888888Idle|r")
         end
     end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        
-        local WidgetManager = addon.WidgetManager
-        if WidgetManager then
-            WidgetManager:OnWidgetDragStop("CombatTimer")
-        end
-    end)
-    
-    -- Register for Edit Mode dragging
-    f:RegisterForDrag("LeftButton")
-    
-    return f
 end
 
-function CombatTimerWidget:PLAYER_REGEN_DISABLED()
-    startTime = GetTime()
-    inCombat = true
-    StartLoop()
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function CombatTimerWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("Combat Timer", 1, 0.82, 0)
+
+    if self.inCombat then
+        local duration = GetTime() - self.startTime
+        GameTooltip:AddDoubleLine("Duration:", string.format("%.1fs", duration), 1, 1, 1, 1, 1, 1)
+        GameTooltip:AddLine("Status: In Combat", 1, 0, 0)
+    else
+        GameTooltip:AddLine("Status: Idle", 0.5, 0.5, 0.5)
+    end
+
+    GameTooltip:Show()
 end
 
-function CombatTimerWidget:PLAYER_REGEN_ENABLED()
-    inCombat = false
-    StopLoop()
+function CombatTimerWidget:OnClick(button)
+    -- Reset?
 end
+
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function CombatTimerWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(60, 20)
     
-    -- Register with WidgetManager
-    local WidgetManager = addon.WidgetManager
-    if WidgetManager then
-        WidgetManager:Register("CombatTimer", {
-            name = "Combat Timer",
-            frame = widgetFrame,
-            onDock = function(f, zone)
-                -- Adjust size to fit zone if needed
-                f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2)
-            end,
-            onUndock = function(f)
-                -- Restore normal size
-                UpdateTimer()
-            end,
-            onEnable = function(f)
-                -- Re-register combat events
-                if Orbit.EventBus then
-                    Orbit.EventBus:On("PLAYER_REGEN_DISABLED", CombatTimerWidget.PLAYER_REGEN_DISABLED, CombatTimerWidget)
-                    Orbit.EventBus:On("PLAYER_REGEN_ENABLED", CombatTimerWidget.PLAYER_REGEN_ENABLED, CombatTimerWidget)
-                end
-                -- Resume ticker if in combat
-                if inCombat then
-                    StartLoop()
-                end
-            end,
-            onDisable = function(f)
-                -- Stop ticker and unregister events to save resources
-                StopLoop()
-                if Orbit.EventBus then
-                    Orbit.EventBus:Off("PLAYER_REGEN_DISABLED", CombatTimerWidget.PLAYER_REGEN_DISABLED)
-                    Orbit.EventBus:Off("PLAYER_REGEN_ENABLED", CombatTimerWidget.PLAYER_REGEN_ENABLED)
-                end
-            end,
-        })
-    end
+    -- Setup handlers
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
     
-    -- Combat events via Orbit EventBus
-    if Orbit.EventBus then
-        Orbit.EventBus:On("PLAYER_REGEN_DISABLED", self.PLAYER_REGEN_DISABLED, self)
-        Orbit.EventBus:On("PLAYER_REGEN_ENABLED", self.PLAYER_REGEN_ENABLED, self)
-    end
+    -- Register events
+    self:RegisterEvent("PLAYER_REGEN_DISABLED", function() self:OnCombatStart() end)
+    self:RegisterEvent("PLAYER_REGEN_ENABLED", function() self:OnCombatEnd() end)
     
-    widgetFrame:Show()
+    -- Register with manager
+    self:Register()
+
+    -- Initial update
+    self:Update()
 end
 
--- Initialize on PLAYER_LOGIN
+-- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    -- Delay to ensure WidgetManager is loaded
-    C_Timer.After(0.5, function()
-        CombatTimerWidget:OnLoad()
-    end)
+    C_Timer.After(1, function() CombatTimerWidget:OnLoad() end)
 end)

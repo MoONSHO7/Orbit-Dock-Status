@@ -1,5 +1,6 @@
 -- Performance.lua
--- Performance Info widget for StatusDock
+-- System performance widget for StatusDock
+-- Features: FPS, Latency, Memory Usage, Graph Visualization, Scroll Modes
 
 local _, addon = ...
 
@@ -7,202 +8,207 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local OrbitEngine = Orbit.Engine
+if not addon.BaseWidget then return end
 
--- [ CONSTANTS ]----------------------------------------------------------------
+local PerformanceWidget = addon.BaseWidget:New("Performance")
+addon.PerformanceWidget = PerformanceWidget
+PerformanceWidget.category = "System"
+
+-- [ CONSTANTS ] ---------------------------------------------------------------
 
 local COLORS = {
-    WHITE = "|cffffffff",
-    RED = "|cffff0000",
-    ORANGE = "|cfffea300",
-    GREEN = "|cff00ff00",
+    GREEN = { r = 0, g = 1, b = 0, a = 1 },
+    YELLOW = { r = 1, g = 0.8, b = 0, a = 1 },
+    RED = { r = 1, g = 0, b = 0, a = 1 },
 }
 
--- [ WIDGET CREATION ]----------------------------------------------------------
+-- [ SETTINGS ] ----------------------------------------------------------------
 
-local PerformanceWidget = {}
-addon.PerformanceWidget = PerformanceWidget
+PerformanceWidget.settings = {
+    mode = 1, -- 1=FPS+MS, 2=FPS, 3=MS, 4=Memory
+}
+local MODES = { "FPS & MS", "FPS Only", "Latency Only", "Memory" }
 
-local widgetFrame = nil
-local timer = nil
+-- [ HISTORY ] -----------------------------------------------------------------
 
-local function UpdateStats()
-    if not widgetFrame or not widgetFrame:IsVisible() then return end
-    
-    -- FPS
-    local fps = GetFramerate()
-    local fpsStr = math.floor(fps)
-    local fpsColor = COLORS.WHITE
-    
-    if fps < 30 then
-        fpsColor = COLORS.RED
-    elseif fps <= 60 then
-        fpsColor = COLORS.ORANGE
-    end
-    
-    -- Latency
-    local _, _, latencyHome = GetNetStats()
-    local ms = latencyHome
-    local msColor = COLORS.WHITE
-    
-    if ms <= 60 then
-        msColor = COLORS.GREEN
-    elseif ms < 200 then
-        msColor = COLORS.ORANGE
+PerformanceWidget.history = {
+    fps = {},
+    latency = {},
+    memory = {},
+}
+local HISTORY_SIZE = 60
+
+-- [ HELPER FUNCTIONS ] --------------------------------------------------------
+
+function PerformanceWidget:GetColorHex(value, threshold1, threshold2, reverse)
+    if reverse then
+        if value >= threshold2 then return "|cff00ff00"
+        elseif value >= threshold1 then return "|cfffea300"
+        else return "|cffff0000"
+        end
     else
-        msColor = COLORS.RED
+        if value <= threshold1 then return "|cff00ff00"
+        elseif value <= threshold2 then return "|cfffea300"
+        else return "|cffff0000"
+        end
     end
-    
-    local text = string.format("%s%d|r%sfps|r | %s%d|r%sms|r", 
-        fpsColor, fpsStr, COLORS.WHITE, msColor, ms, COLORS.WHITE)
-    
-    widgetFrame.Text:SetText(text)
-    
-    -- Auto-resize to fit text
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(width + 10, 20)
 end
 
-local function StartLoop()
-    if timer then timer:Cancel() end
-    timer = C_Timer.NewTicker(1, UpdateStats)
-    UpdateStats()
+-- [ UPDATES ] -----------------------------------------------------------------
+
+function PerformanceWidget:Update()
+    local fps = GetFramerate()
+    local _, _, home, world = GetNetStats()
+    UpdateAddOnMemoryUsage()
+    local mem = collectgarbage("count") / 1024
+    
+    table.insert(self.history.fps, fps)
+    if #self.history.fps > HISTORY_SIZE then table.remove(self.history.fps, 1) end
+    table.insert(self.history.latency, world)
+    if #self.history.latency > HISTORY_SIZE then table.remove(self.history.latency, 1) end
+    table.insert(self.history.memory, mem)
+    if #self.history.memory > HISTORY_SIZE then table.remove(self.history.memory, 1) end
+    
+    local fpsColor = self:GetColorHex(fps, 30, 60, true)
+    local msColor = self:GetColorHex(world, 100, 200, false)
+
+    if self.settings.mode == 1 then
+        self:SetFormattedText(nil, string.format("%s%d|rfps %s%d|rms", fpsColor, math.floor(fps), msColor, world))
+    elseif self.settings.mode == 2 then
+        self:SetFormattedText("FPS:", string.format("%s%d|r", fpsColor, math.floor(fps)))
+    elseif self.settings.mode == 3 then
+        self:SetFormattedText("MS:", string.format("%s%d|r", msColor, world))
+    elseif self.settings.mode == 4 then
+        self:SetFormattedText("Mem:", string.format("%.1f MB", mem))
+    end
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusPerformanceWidget", UIParent)
-    f:SetSize(100, 20)
-    f:SetClampedToScreen(true)
-    f.systemIndex = "StatusDock_Performance"
-    f.editModeName = "Performance"
-    
-    -- Text display
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    -- Apply global font
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, {
-            font = Orbit.db.GlobalSettings.Font,
-            textSize = 12,
-        })
-    end
-    
-    -- Orbit Anchoring options
-    f.anchorOptions = {
-        horizontal = true,
-        vertical = true,
-        syncScale = false,
-        syncDimensions = false,
-    }
-    
-    -- No default position - WidgetManager will place in drawer or dock
-    
-    -- Make draggable in Edit Mode
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", function(self)
-        GameTooltip:SetOwner(self, "ANCHOR_TOP")
-        GameTooltip:ClearLines()
-        GameTooltip:AddLine("Performance", 1, 0.82, 0)
-        GameTooltip:AddLine(" ")
-        local fps = GetFramerate()
-        local _, _, homeLat, worldLat = GetNetStats()
-        GameTooltip:AddDoubleLine("FPS:", string.format("%.1f", fps), 0.7, 0.7, 0.7, 0, 1, 0)
-        GameTooltip:AddDoubleLine("Home Latency:", string.format("%dms", homeLat), 0.7, 0.7, 0.7, 1, 1, 1)
-        GameTooltip:AddDoubleLine("World Latency:", string.format("%dms", worldLat), 0.7, 0.7, 0.7, 1, 1, 1)
-        GameTooltip:Show()
-    end)
-    f:SetScript("OnLeave", function() GameTooltip:Hide() end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WidgetManager = addon.WidgetManager
-        
-        -- Check if dragging is allowed (drawer must be open)
-        if not WidgetManager or not WidgetManager:OnWidgetDragStart("Performance") then
-            return  -- Block drag if drawer isn't open
-        end
-        
-        -- Re-parent to UIParent so we can drag freely (even if docked)
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")  -- Ensure it's on top while dragging
-        self:StartMoving()
-        
-        -- Update zone highlighting during drag
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM = addon.WidgetManager
-                if WM then
-                    WM:OnWidgetDragUpdate()
-                end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        
-        local WidgetManager = addon.WidgetManager
-        if WidgetManager then
-            WidgetManager:OnWidgetDragStop("Performance")
-        end
-    end)
-    
-    -- Register for Edit Mode dragging
-    f:RegisterForDrag("LeftButton")
-    
-    return f
+function PerformanceWidget:OnEnable()
+    self:Update()
+    self.timer = C_Timer.NewTicker(1, function() self:Update() end)
 end
+
+function PerformanceWidget:OnDisable()
+    if self.timer then self.timer:Cancel(); self.timer = nil end
+end
+
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function PerformanceWidget:OnScroll(delta)
+    if delta > 0 then
+        self.settings.mode = self.settings.mode + 1
+        if self.settings.mode > 4 then self.settings.mode = 1 end
+    else
+        self.settings.mode = self.settings.mode - 1
+        if self.settings.mode < 1 then self.settings.mode = 4 end
+    end
+    self:Update()
+end
+
+function PerformanceWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateTitle("Display Mode")
+    for i, name in ipairs(MODES) do
+        rootDescription:CreateRadio(name, function() return self.settings.mode == i end, function()
+            self.settings.mode = i
+            self:Update()
+        end)
+    end
+
+    rootDescription:CreateButton("Collect Garbage", function()
+        collectgarbage("collect")
+        print("|cff00ff00Memory Garbage Collected|r")
+        self:Update()
+    end)
+end
+
+function PerformanceWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    GameTooltip:AddLine("System Performance", 1, 0.82, 0)
+
+    local fps = GetFramerate()
+    local _, _, home, world = GetNetStats()
+    local mem = collectgarbage("count") / 1024
+
+    GameTooltip:AddDoubleLine("FPS:", string.format("%.1f", fps), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Home Latency:", string.format("%dms", home), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("World Latency:", string.format("%dms", world), 1, 1, 1, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Memory:", string.format("%.2f MB", mem), 1, 1, 1, 1, 1, 1)
+    
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddLine("Top Addons (Memory):", 0.7, 0.7, 0.7)
+
+    local addons = {}
+    for i = 1, GetNumAddOns() do
+        local m = GetAddOnMemoryUsage(i)
+        local name, title = GetAddOnInfo(i)
+        if m > 0 then table.insert(addons, { name = title or name, mem = m }) end
+    end
+    table.sort(addons, function(a, b) return a.mem > b.mem end)
+
+    for i = 1, 5 do
+        if addons[i] then
+            local memStr
+            if addons[i].mem > 1000 then memStr = string.format("%.2f MB", addons[i].mem / 1000)
+            else memStr = string.format("%.0f KB", addons[i].mem) end
+            GameTooltip:AddDoubleLine(addons[i].name, memStr, 1, 1, 1, 1, 1, 1)
+        end
+    end
+
+    GameTooltip:AddLine(" ")
+    GameTooltip:AddDoubleLine("Scroll", "Cycle Mode", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Click", "Collect Garbage", 0.7, 0.7, 0.7, 1, 1, 1)
+    
+    GameTooltip:Show()
+
+    -- Draw Graph (Based on Mode)
+    if not self.graphFrame then
+        self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
+        self.graphFrame:SetSize(220, 60)
+        self.graph = addon.Graph:New(self.graphFrame, 220, 60)
+    end
+    self.graphFrame:SetParent(GameTooltip)
+    self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
+    self.graphFrame:Show()
+
+    self.graph:Clear()
+
+    if self.settings.mode == 4 then
+        self.graph:SetColor(0, 0.7, 1, 1) -- Blue for Mem
+        for _, val in ipairs(self.history.memory) do self.graph:AddData(val) end
+    elseif self.settings.mode == 3 then
+        self.graph:SetColor(1, 0.5, 0, 1) -- Orange for Latency
+        for _, val in ipairs(self.history.latency) do self.graph:AddData(val) end
+    else
+        self.graph:SetColor(0, 1, 0, 1) -- Green for FPS
+        for _, val in ipairs(self.history.fps) do self.graph:AddData(val) end
+    end
+    self.graph:Draw()
+end
+
+function PerformanceWidget:OnClick(button)
+    collectgarbage("collect")
+    print("|cff00ff00Memory Garbage Collected|r")
+    self:Update()
+end
+
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function PerformanceWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(120, 20)
     
-    -- Register with WidgetManager
-    local WidgetManager = addon.WidgetManager
-    if WidgetManager then
-        WidgetManager:Register("Performance", {
-            name = "Performance",
-            frame = widgetFrame,
-            onDock = function(f, zone)
-                -- Adjust size to fit zone if needed
-                f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2)
-            end,
-            onUndock = function(f)
-                -- Restore normal size
-                UpdateStats()
-            end,
-            onEnable = function(f)
-                -- Resume stats ticker when drawer opens
-                StartLoop()
-            end,
-            onDisable = function(f)
-                -- Stop stats ticker when drawer closes to save resources
-                if timer then
-                    timer:Cancel()
-                    timer = nil
-                end
-            end,
-        })
-    end
-    
-    StartLoop()
-    widgetFrame:Show()
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+    self:SetScrollFunc(function(_, delta) self:OnScroll(delta) end)
+
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
+    self:Register()
+    self:Enable()
 end
 
--- Initialize on PLAYER_LOGIN
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    -- Delay to ensure WidgetManager is loaded
-    C_Timer.After(0.5, function()
-        PerformanceWidget:OnLoad()
-    end)
+    C_Timer.After(0.5, function() PerformanceWidget:OnLoad() end)
 end)

@@ -1,5 +1,6 @@
 -- Location.lua
--- Zone name widget for StatusDock
+-- Advanced Location widget for StatusDock
+-- Features: Zone tracking, PVP status, Coordinates, Travel Menu, Zone Events
 
 local _, addon = ...
 
@@ -7,168 +8,126 @@ local _, addon = ...
 local Orbit = Orbit
 if not Orbit then return end
 
-local LocationWidget = {}
+if not addon.BaseWidget then return end
+
+local LocationWidget = addon.BaseWidget:New("Location")
 addon.LocationWidget = LocationWidget
+LocationWidget.category = "World"
 
-local widgetFrame = nil
+-- [ HELPERS ] -----------------------------------------------------------------
 
-local function UpdateLocation()
-    if not widgetFrame then return end
-    
-    local zone = GetZoneText() or "Unknown"
-    widgetFrame.Text:SetText(zone)
-    
-    local width = widgetFrame.Text:GetStringWidth()
-    widgetFrame:SetSize(math.min(width + 10, 150), 20)
+function LocationWidget:GetZoneColor()
+    local pvpType = C_PvP.GetZonePVPInfo()
+    if pvpType == "sanctuary" then return "|cff74d5f2"
+    elseif pvpType == "arena" or pvpType == "hostile" then return "|cffff0000"
+    elseif pvpType == "friendly" then return "|cff00ff00"
+    elseif pvpType == "contested" then return "|cffeda55f"
+    end
+    return "|cffffffff"
 end
 
-local function ShowTooltip(self)
-    GameTooltip:SetOwner(self, "ANCHOR_TOP")
+function LocationWidget:GetZoneName()
+    return GetZoneText() or C_Map.GetMapInfo(C_Map.GetBestMapForUnit("player")).name
+end
+
+-- [ UPDATE ] ------------------------------------------------------------------
+
+function LocationWidget:Update()
+    local zone = self:GetZoneName()
+    local subZone = GetSubZoneText()
+    local text = (subZone ~= "") and subZone or zone
+    local color = self:GetZoneColor()
+
+    local mapID = C_Map.GetBestMapForUnit("player")
+    local pos = mapID and C_Map.GetPlayerMapPosition(mapID, "player")
+    local coordStr = ""
+    if pos then
+        coordStr = string.format("(%.1f, %.1f)", pos.x * 100, pos.y * 100)
+    end
+    
+    self:SetFormattedText(nil, string.format("%s%s|r %s", color, text, coordStr))
+end
+
+-- [ INTERACTION ] -------------------------------------------------------------
+
+function LocationWidget:GenerateMenu(owner, rootDescription)
+    rootDescription:CreateButton("Toggle World Map", function() ToggleWorldMap() end)
+
+    local travel = rootDescription:CreateButton("Travel")
+
+    local toys = {
+        { id = 6948, name = "Hearthstone" },
+        { id = 110560, name = "Garrison Hearthstone" },
+        { id = 140192, name = "Dalaran Hearthstone" },
+        { id = 556, name = "Astral Recall" },
+    }
+
+    for _, toy in ipairs(toys) do
+        if PlayerHasToy(toy.id) or GetItemCount(toy.id) > 0 then
+            local name, _, _, _, _, _, _, _, _, icon = GetItemInfo(toy.id)
+            if name then
+                travel:CreateButton(string.format("|T%s:14|t %s", icon, name), function()
+                    if not InCombatLockdown() then
+                        UseItemByName(name)
+                    else
+                        print("|cffff0000Cannot use in combat|r")
+                    end
+                end)
+            end
+        end
+    end
+end
+
+function LocationWidget:ShowTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
     GameTooltip:ClearLines()
     GameTooltip:AddLine("Location", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
     
-    local zone = GetZoneText() or "Unknown"
-    local subzone = GetSubZoneText() or ""
-    local realZone = GetRealZoneText() or ""
+    local zone = GetZoneText()
+    local subZone = GetSubZoneText()
+    local pvpType = C_PvP.GetZonePVPInfo()
     
-    GameTooltip:AddDoubleLine("Zone:", zone, 0.7, 0.7, 0.7, 1, 1, 1)
-    if subzone ~= "" then
-        GameTooltip:AddDoubleLine("Subzone:", subzone, 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
-    end
-    if realZone ~= "" and realZone ~= zone then
-        GameTooltip:AddDoubleLine("Region:", realZone, 0.7, 0.7, 0.7, 0.8, 0.8, 0.8)
+    GameTooltip:AddDoubleLine("Zone:", zone, 1, 1, 1, 1, 1, 1)
+    if subZone ~= "" and subZone ~= zone then
+        GameTooltip:AddDoubleLine("Subzone:", subZone, 1, 1, 1, 1, 1, 1)
     end
     
-    -- PvP status
-    local pvpType = GetZonePVPInfo()
-    if pvpType then
-        local pvpText, r, g, b = "Unknown", 1, 1, 1
-        if pvpType == "sanctuary" then
-            pvpText, r, g, b = "Sanctuary", 0.4, 0.8, 1
-        elseif pvpType == "friendly" then
-            pvpText, r, g, b = "Friendly", 0, 1, 0
-        elseif pvpType == "hostile" then
-            pvpText, r, g, b = "Hostile", 1, 0, 0
-        elseif pvpType == "contested" then
-            pvpText, r, g, b = "Contested", 1, 0.65, 0
-        elseif pvpType == "combat" then
-            pvpText, r, g, b = "Combat Zone", 1, 0, 0
-        end
-        GameTooltip:AddDoubleLine("PvP Status:", pvpText, 0.7, 0.7, 0.7, r, g, b)
-    end
-    
+    GameTooltip:AddDoubleLine("PVP Status:", (pvpType or "Unknown"), 1, 1, 1, 1, 1, 1)
+
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Click", "Open Map", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Right Click", "Travel Menu", 0.7, 0.7, 0.7, 1, 1, 1)
+
     GameTooltip:Show()
 end
 
-local function HideTooltip()
-    GameTooltip:Hide()
+function LocationWidget:OnClick(button)
+    ToggleWorldMap()
 end
 
-local function CreateWidgetFrame()
-    local f = CreateFrame("Frame", "OrbitStatusLocationWidget", UIParent)
-    f:SetSize(100, 20)
-    f:SetClampedToScreen(true)
-    f.editModeName = "Location"
-    
-    f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.Text:SetPoint("CENTER", f, "CENTER")
-    
-    if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = 12 })
-    end
-    
-    -- No default position - WidgetManager places in drawer
-    f:SetMovable(true)
-    f:EnableMouse(true)
-    
-    -- Tooltip
-    f:SetScript("OnEnter", ShowTooltip)
-    f:SetScript("OnLeave", HideTooltip)
-    
-    -- Click to open map
-    f:SetScript("OnMouseUp", function(self, button)
-        if button == "LeftButton" and not self.isDragging then
-            ToggleWorldMap()
-        end
-    end)
-    
-    f:SetScript("OnDragStart", function(self)
-        local WM = addon.WidgetManager
-        if not WM or not WM:OnWidgetDragStart("Location") then
-            return  -- Block drag if drawer isn't open
-        end
-        self.isDragging = true
-        self:SetParent(UIParent)
-        self:SetFrameStrata("TOOLTIP")
-        self:StartMoving()
-        if not widgetFrame.dragTicker then
-            widgetFrame.dragTicker = C_Timer.NewTicker(0.05, function()
-                local WM2 = addon.WidgetManager
-                if WM2 then WM2:OnWidgetDragUpdate() end
-            end)
-        end
-    end)
-    
-    f:SetScript("OnDragStop", function(self)
-        self:StopMovingOrSizing()
-        self.isDragging = false
-        if widgetFrame.dragTicker then
-            widgetFrame.dragTicker:Cancel()
-            widgetFrame.dragTicker = nil
-        end
-        local WM = addon.WidgetManager
-        if WM then WM:OnWidgetDragStop("Location") end
-    end)
-    
-    f:RegisterForDrag("LeftButton")
-    return f
-end
+-- [ LIFECYCLE ] ---------------------------------------------------------------
 
 function LocationWidget:OnLoad()
-    widgetFrame = CreateWidgetFrame()
-    self.frame = widgetFrame
+    self:CreateFrame(150, 20)
+
+    self:SetUpdateFunc(function() self:Update() end)
+    self:SetTooltipFunc(function() self:ShowTooltip() end)
+    self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
+
+    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
+
+    self:RegisterEvent("ZONE_CHANGED")
+    self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+    self:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    C_Timer.NewTicker(0.5, function() self:Update() end)
     
-    -- Create event frame for zone changes
-    local eventFrame = CreateFrame("Frame")
-    self.eventFrame = eventFrame
-    
-    local WM = addon.WidgetManager
-    if WM then
-        WM:Register("Location", {
-            name = "Location",
-            frame = widgetFrame,
-            onDock = function(f, zone) f:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2) end,
-            onUndock = function(f) UpdateLocation() end,
-            onEnable = function(f)
-                -- Re-register zone events and update display
-                eventFrame:RegisterEvent("ZONE_CHANGED")
-                eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
-                eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-                UpdateLocation()
-            end,
-            onDisable = function(f)
-                -- Unregister events to save resources
-                eventFrame:UnregisterEvent("ZONE_CHANGED")
-                eventFrame:UnregisterEvent("ZONE_CHANGED_INDOORS")
-                eventFrame:UnregisterEvent("ZONE_CHANGED_NEW_AREA")
-            end,
-        })
-    end
-    
-    eventFrame:RegisterEvent("ZONE_CHANGED")
-    eventFrame:RegisterEvent("ZONE_CHANGED_INDOORS")
-    eventFrame:RegisterEvent("ZONE_CHANGED_NEW_AREA")
-    eventFrame:SetScript("OnEvent", UpdateLocation)
-    
-    UpdateLocation()
-    widgetFrame:Show()
+    self:Register()
+    self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
 initFrame:SetScript("OnEvent", function()
-    C_Timer.After(0.5, function() LocationWidget:OnLoad() end)
+    C_Timer.After(1, function() LocationWidget:OnLoad() end)
 end)

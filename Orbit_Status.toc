@@ -17,21 +17,41 @@
 
 # Data
 Core\StatusData.lua
+Core\Config.lua
+Core\Graph.lua
+Core\Formatting.lua
 
 # Core
 Core\StatusDock.lua
 
 # Widgets
+Widgets\BaseWidget.lua
 Widgets\WidgetManager.lua
+Widgets\Volume.lua
 Widgets\Performance.lua
 Widgets\CombatTimer.lua
 Widgets\Time.lua
 Widgets\Gold.lua
+Widgets\Currency.lua
 Widgets\Spec.lua
 Widgets\Durability.lua
 Widgets\BagSpace.lua
 Widgets\ItemLevel.lua
 Widgets\Location.lua
-Widgets\Coordinates.lua
 Widgets\Friends.lua
 Widgets\Guild.lua
+Widgets\Dungeon.lua
+Widgets\Quest.lua
+Widgets\Loot.lua
+Widgets\Group.lua
+Widgets\Notes.lua
+Widgets\Buffs.lua
+Widgets\Speed.lua
+Widgets\Equipment.lua
+Widgets\Professions.lua
+Widgets\Damage.lua
+Widgets\Reputation.lua
+Widgets\Experience.lua
+Widgets\Missions.lua
+Widgets\Mounts.lua
+Widgets\Weekly.lua
