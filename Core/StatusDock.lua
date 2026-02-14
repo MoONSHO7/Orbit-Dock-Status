@@ -348,22 +348,26 @@ local function CreateWidgetZone(index)
     zone.zoneIndex = index
     zone.dockedWidget = nil
     
-    -- Drop zone highlight (visible in Edit Mode during widget drag)
+    -- Drop zone highlight
     zone.highlight = zone:CreateTexture(nil, "OVERLAY")
     zone.highlight:SetAllPoints()
-    zone.highlight:SetColorTexture(1, 1, 1, 0.15)
+    zone.highlight:SetColorTexture(0, 0.8, 1, 0.2)
     zone.highlight:Hide()
     
-    -- Border for Edit Mode visualization
+    -- Dashed Border for Edit Mode
     zone.border = CreateFrame("Frame", nil, zone, "BackdropTemplate")
     zone.border:SetAllPoints()
     zone.border:SetBackdrop({
         edgeFile = "Interface\\Buttons\\WHITE8x8",
         edgeSize = 1,
     })
-    zone.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.5)
+    zone.border:SetBackdropBorderColor(0, 0.8, 1, 0.5)
     zone.border:Hide()
     
+    zone.Label = zone.border:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    zone.Label:SetPoint("CENTER")
+    zone.Label:SetText("Drop")
+
     return zone
 end
 
@@ -590,51 +594,53 @@ local function CreateDrawerButton()
     if not dock then return nil end
     
     drawerButton = CreateFrame("Button", "OrbitStatusDrawerButton", dock)
-    drawerButton:SetWidth(8)
+    drawerButton:SetWidth(16) -- Wider hit area
     drawerButton:SetPoint("TOPLEFT", dock, "TOPLEFT", 0, 0)
     drawerButton:SetPoint("BOTTOMLEFT", dock, "BOTTOMLEFT", 0, 0)
     drawerButton:SetFrameLevel(dock:GetFrameLevel() + 10)
     
-    -- White block texture
-    drawerButton.fill = drawerButton:CreateTexture(nil, "OVERLAY")
-    drawerButton.fill:SetAllPoints()
-    drawerButton.fill:SetColorTexture(1, 1, 1, 0.0)  -- Invisible by default
+    -- Icon instead of block
+    drawerButton.icon = drawerButton:CreateTexture(nil, "OVERLAY")
+    drawerButton.icon:SetSize(12, 12)
+    drawerButton.icon:SetPoint("CENTER")
+    drawerButton.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
+    drawerButton.icon:SetAlpha(0.5)
     
     -- Hover effect
     drawerButton:SetScript("OnEnter", function(self)
-        self.fill:SetAlpha(0.4)
+        self.icon:SetAlpha(1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Widget Drawer")
         GameTooltip:Show()
     end)
     
     drawerButton:SetScript("OnLeave", function(self)
-        self.fill:SetAlpha(0.0)
+        self.icon:SetAlpha(0.5)
         GameTooltip:Hide()
     end)
     
-    -- Toggle drawer on click
+    -- Toggle drawer on click via WidgetManager
     drawerButton:SetScript("OnClick", function()
-        if not drawerPanel then
-            CreateDrawerPanel()
-        end
-        
-        if drawerPanel:IsShown() then
-            drawerPanel:Hide()
-        else
-            -- Position below dock
-            local isTop = IsTopPosition()
-            drawerPanel:ClearAllPoints()
-            if isTop then
-                drawerPanel:SetPoint("TOPLEFT", dock, "BOTTOMLEFT", 0, -4)
-            else
-                drawerPanel:SetPoint("BOTTOMLEFT", dock, "TOPLEFT", 0, 4)
-            end
-            drawerPanel:Show()
+        if addon.WidgetManager then
+            addon.WidgetManager:ToggleDrawer()
         end
     end)
     
     return drawerButton
+end
+
+-- Hook into dock drop targets visibility
+function dock:ShowDropTargets(show)
+    if not self.widgetZones then return end
+    for _, zone in ipairs(self.widgetZones) do
+        if show then
+            zone.border:Show()
+            zone.highlight:Show()
+        else
+            zone.border:Hide()
+            zone.highlight:Hide()
+        end
+    end
 end
 
 local function ToggleDrawer(show)
