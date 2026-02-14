@@ -376,7 +376,7 @@ local function UpdateWidgetZoneLayout()
     
     local slotCount = Plugin:GetSetting(1, "WidgetSlotCount") or 5
     local padding = 8
-    local drawerButtonWidth = 8  -- Space for edge block button
+    local drawerButtonWidth = 8
     local dockWidth = dock:GetWidth()
     local dockHeight = dock:GetHeight()
     local availableWidth = dockWidth - drawerButtonWidth - padding
@@ -466,6 +466,7 @@ end
 
 local drawerPanel = nil
 local drawerButton = nil
+
 local MIN_DRAWER_ZONES = 12
 local DRAWER_COLS = 4
 local DRAWER_ZONE_WIDTH = 90
@@ -586,53 +587,31 @@ local function CreateDrawerPanel()
         addon.WidgetManager:DisableDrawerWidgets()
     end
     
-    return drawerPanel
 end
 
 local function CreateDrawerButton()
     if drawerButton then return drawerButton end
     if not dock then return nil end
-    
     drawerButton = CreateFrame("Button", "OrbitStatusDrawerButton", dock)
-    drawerButton:SetWidth(16) -- Wider hit area
+    drawerButton:SetWidth(16)
     drawerButton:SetPoint("TOPLEFT", dock, "TOPLEFT", 0, 0)
     drawerButton:SetPoint("BOTTOMLEFT", dock, "BOTTOMLEFT", 0, 0)
     drawerButton:SetFrameLevel(dock:GetFrameLevel() + 10)
-    
-    -- Icon instead of block
-    drawerButton.icon = drawerButton:CreateTexture(nil, "OVERLAY")
-    drawerButton.icon:SetSize(12, 12)
-    drawerButton.icon:SetPoint("CENTER")
-    drawerButton.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
-    drawerButton.icon:SetAlpha(0.5)
-    
-    -- Hover effect
     drawerButton:SetScript("OnEnter", function(self)
-        self.icon:SetAlpha(1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Widget Drawer")
         GameTooltip:Show()
     end)
-    
-    drawerButton:SetScript("OnLeave", function(self)
-        self.icon:SetAlpha(0.5)
-        GameTooltip:Hide()
-    end)
-    
-    -- Toggle drawer on click via WidgetManager
+    drawerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
     drawerButton:SetScript("OnClick", function()
-        if addon.WidgetManager then
-            addon.WidgetManager:ToggleDrawer()
-        end
+        if addon.ToggleDrawer then addon.ToggleDrawer() end
     end)
-    
     return drawerButton
 end
 
--- Hook into dock drop targets visibility
-function dock:ShowDropTargets(show)
-    if not self.widgetZones then return end
-    for _, zone in ipairs(self.widgetZones) do
+local function ShowDropTargets(show)
+    if not dock or not dock.widgetZones then return end
+    for _, zone in ipairs(dock.widgetZones) do
         if show then
             zone.border:Show()
             zone.highlight:Show()
@@ -644,9 +623,8 @@ function dock:ShowDropTargets(show)
 end
 
 local function ToggleDrawer(show)
-    if not drawerPanel then
-        CreateDrawerPanel()
-    end
+    if not drawerPanel then CreateDrawerPanel() end
+    if show == nil then show = not drawerPanel:IsShown() end
     if show then
         local isTop = IsTopPosition()
         drawerPanel:ClearAllPoints()
