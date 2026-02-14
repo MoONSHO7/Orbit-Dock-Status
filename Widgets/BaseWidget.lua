@@ -1,6 +1,5 @@
 -- BaseWidget.lua
 -- Foundation for all Orbit Status widgets
--- Provides common functionality for event handling, dragging, and display
 
 local _, addon = ...
 
@@ -12,47 +11,59 @@ local BaseWidget = {}
 addon.BaseWidget = BaseWidget
 BaseWidget.__index = BaseWidget
 
---- Create a new widget instance
----@param name string Unique identifier for the widget
+-- [ CONSTANTS ] -------------------------------------------------------------------
+
+local DEFAULT_FRAME_WIDTH = 100
+local DEFAULT_FRAME_HEIGHT = 20
+local DEFAULT_TEXT_SIZE = 12
+local TEXT_PADDING = 10
+local ICON_SIZE = 14
+local ICON_PADDING = 4
+local DOCK_PADDING_W = 4
+local DOCK_PADDING_H = 2
+local DRAG_TICKER_INTERVAL = 0.05
+local FLASH_ON_SEC = 0.5
+local FLASH_OFF_SEC = 0.5
+
+-- [ CONSTRUCTOR ] -----------------------------------------------------------------
+
 function BaseWidget:New(name)
     local instance = setmetatable({}, BaseWidget)
     instance.name = name
-    instance.events = {}      -- Map of event name -> handler function
+    instance.events = {}
     instance.isEnabled = false
     instance.frame = nil
     instance.text = nil
+    instance.icon = nil
     instance.tooltipFunc = nil
     instance.updateFunc = nil
     instance.clickFunc = nil
     instance.inEditMode = false
+    instance.category = "UTILITY"
+    instance.leftClickHint = nil
+    instance.rightClickHint = nil
+    instance.updateTier = nil
     return instance
 end
 
---- Create the visual frame for the widget
----@param width number? Initial width (default 100)
----@param height number? Initial height (default 20)
+-- [ FRAME CREATION ] --------------------------------------------------------------
+
 function BaseWidget:CreateFrame(width, height)
     if self.frame then return self.frame end
 
     local f = CreateFrame("Frame", "OrbitStatus" .. self.name, UIParent)
-    f:SetSize(width or 100, height or 20)
+    f:SetSize(width or DEFAULT_FRAME_WIDTH, height or DEFAULT_FRAME_HEIGHT)
     f:SetClampedToScreen(true)
     f.editModeName = self.name
 
-    -- Text display
     f.Text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     f.Text:SetPoint("CENTER", f, "CENTER")
     self.text = f.Text
 
-    -- Apply global font settings if available
     if Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font then
-        Orbit.Skin:SkinText(f.Text, {
-            font = Orbit.db.GlobalSettings.Font,
-            textSize = 12,
-        })
+        Orbit.Skin:SkinText(f.Text, { font = Orbit.db.GlobalSettings.Font, textSize = DEFAULT_TEXT_SIZE })
     end
 
-    -- Standard scripts
     f:SetMovable(true)
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
@@ -67,7 +78,8 @@ function BaseWidget:CreateFrame(width, height)
     return f
 end
 
---- Register the widget with the WidgetManager
+-- [ REGISTRATION ] ----------------------------------------------------------------
+
 function BaseWidget:Register()
     if not self.frame then self:CreateFrame() end
 
@@ -75,7 +87,7 @@ function BaseWidget:Register()
         addon.WidgetManager:Register(self.name, {
             name = self.name,
             frame = self.frame,
-            -- Bridge WidgetManager callbacks to BaseWidget methods
+            category = self.category,
             onDock = function(_, zone) self:OnDock(zone) end,
             onUndock = function(_) self:OnUndock() end,
             onEnable = function(_) self:Enable() end,
@@ -84,191 +96,221 @@ function BaseWidget:Register()
     end
 end
 
---- Set the update function (called on events or timer)
----@param func function
-function BaseWidget:SetUpdateFunc(func)
-    self.updateFunc = func
+-- [ CATEGORY ] --------------------------------------------------------------------
+
+function BaseWidget:SetCategory(category) self.category = category end
+
+-- [ SETTERS ] ---------------------------------------------------------------------
+
+function BaseWidget:SetUpdateFunc(func) self.updateFunc = func end
+function BaseWidget:SetTooltipFunc(func) self.tooltipFunc = func end
+function BaseWidget:SetClickFunc(func) self.clickFunc = func end
+
+function BaseWidget:SetUpdateTier(tier)
+    self.updateTier = tier
+    if addon.WidgetManager then addon.WidgetManager:RegisterForScheduler(self.name, tier, self.updateFunc) end
 end
 
---- Set the tooltip function
----@param func function
-function BaseWidget:SetTooltipFunc(func)
-    self.tooltipFunc = func
+-- [ ICON ] ------------------------------------------------------------------------
+
+function BaseWidget:SetIcon(texturePath)
+    if not self.frame then return end
+    if not self.icon then
+        self.icon = self.frame:CreateTexture(nil, "ARTWORK")
+        self.icon:SetSize(ICON_SIZE, ICON_SIZE)
+        self.icon:SetPoint("LEFT", self.frame, "LEFT", 2, 0)
+        self.text:SetPoint("CENTER", self.frame, "CENTER", (ICON_SIZE + ICON_PADDING) / 2, 0)
+    end
+    self.icon:SetTexture(texturePath)
+    self.icon:Show()
 end
 
---- Set the click handler
----@param func function
-function BaseWidget:SetClickFunc(func)
-    self.clickFunc = func
+-- [ SOUND ] -----------------------------------------------------------------------
+
+function BaseWidget:PlaySound(soundKitID)
+    if soundKitID then PlaySound(soundKitID) end
 end
 
---- Register a WoW event
----@param event string Event name
----@param handler function? Optional handler (defaults to self.updateFunc)
+-- [ EVENTS ] ----------------------------------------------------------------------
+
 function BaseWidget:RegisterEvent(event, handler)
     self.events[event] = handler or self.updateFunc
-
-    -- If already enabled, register specifically with the frame (or event frame)
-    if self.isEnabled and self.eventFrame then
-        self.eventFrame:RegisterEvent(event)
-    end
+    if self.isEnabled and self.eventFrame then self.eventFrame:RegisterEvent(event) end
 end
 
---- Unregister a WoW event
----@param event string Event name
 function BaseWidget:UnregisterEvent(event)
     self.events[event] = nil
-    if self.eventFrame then
-        self.eventFrame:UnregisterEvent(event)
-    end
+    if self.eventFrame then self.eventFrame:UnregisterEvent(event) end
 end
 
---- Enable the widget (start listening to events)
+-- [ LIFECYCLE ] -------------------------------------------------------------------
+
 function BaseWidget:Enable()
     if self.isEnabled then return end
     self.isEnabled = true
 
-    -- Create generic event frame if needed
     if not self.eventFrame then
         self.eventFrame = CreateFrame("Frame")
         self.eventFrame:SetScript("OnEvent", function(_, event, ...)
             local handler = self.events[event]
-            if handler then
-                handler(self, event, ...)
-            elseif self.updateFunc then
-                self.updateFunc(self)
-            end
+            if handler then handler(self, event, ...)
+            elseif self.updateFunc then self.updateFunc(self) end
         end)
     end
 
-    -- Register all tracked events
-    for event, _ in pairs(self.events) do
-        self.eventFrame:RegisterEvent(event)
+    for event, _ in pairs(self.events) do self.eventFrame:RegisterEvent(event) end
+    if self.updateTier and addon.WidgetManager then
+        addon.WidgetManager:RegisterForScheduler(self.name, self.updateTier, self.updateFunc)
     end
-
-    -- Initial update
-    if self.updateFunc then
-        self.updateFunc(self)
-    end
-
+    if self.updateFunc then self.updateFunc(self) end
     if self.OnEnable then self:OnEnable() end
 
-    -- Edit Mode Integration
     if Orbit.EventBus then
         Orbit.EventBus:On("EDIT_MODE_ENTERED", function()
             self.inEditMode = true
             if self.updateFunc then self.updateFunc(self) end
             if self.frame then self.frame:Show() end
-        end)
+        end, self)
         Orbit.EventBus:On("EDIT_MODE_EXITED", function()
             self.inEditMode = false
             if self.updateFunc then self.updateFunc(self) end
-        end)
+        end, self)
     end
 end
 
---- Disable the widget (stop listening)
 function BaseWidget:Disable()
     if not self.isEnabled then return end
     self.isEnabled = false
-
-    if self.eventFrame then
-        self.eventFrame:UnregisterAllEvents()
+    if self.eventFrame then self.eventFrame:UnregisterAllEvents() end
+    if self.updateTier and addon.WidgetManager then
+        addon.WidgetManager:UnregisterFromScheduler(self.name, self.updateTier)
     end
-
+    if Orbit.EventBus then Orbit.EventBus:OffContext(self) end
     if self.OnDisable then self:OnDisable() end
 end
 
---- Update the widget text
----@param text string
+-- [ TEXT ] -------------------------------------------------------------------------
+
 function BaseWidget:SetText(text)
-    if self.text then
-        self.text:SetText(text)
-        -- Auto-resize frame to fit text
-        local width = self.text:GetStringWidth()
-        self.frame:SetSize(width + 10, self.frame:GetHeight())
-    end
+    if not self.text then return end
+    self.text:SetText(text)
+    local widget = addon.WidgetManager and addon.WidgetManager:GetWidget(self.name)
+    if widget and widget.isDocked then return end
+    local width = self.text:GetStringWidth()
+    local iconOffset = self.icon and (ICON_SIZE + ICON_PADDING) or 0
+    self.frame:SetSize(width + TEXT_PADDING + iconOffset, self.frame:GetHeight())
 end
 
---- Handle mouse enter (tooltip)
+-- [ TOOLTIP TEMPLATE ] ------------------------------------------------------------
+
+function BaseWidget:BuildTooltip()
+    GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
+    GameTooltip:ClearLines()
+    self:PopulateTooltip(GameTooltip)
+    if self.leftClickHint or self.rightClickHint then
+        GameTooltip:AddLine(" ")
+        if self.leftClickHint then GameTooltip:AddDoubleLine("Left Click", self.leftClickHint, 0.7, 0.7, 0.7, 1, 1, 1) end
+        if self.rightClickHint then GameTooltip:AddDoubleLine("Right Click", self.rightClickHint, 0.7, 0.7, 0.7, 1, 1, 1) end
+    end
+    GameTooltip:Show()
+end
+
+function BaseWidget:PopulateTooltip(tooltip)
+    tooltip:AddLine(self.name, 1, 0.82, 0)
+end
+
+-- [ INTERACTION ] -----------------------------------------------------------------
+
 function BaseWidget:OnEnter()
-    if self.tooltipFunc then
-        self.tooltipFunc(self)
-    end
+    if self.tooltipFunc then self.tooltipFunc(self)
+    else self:BuildTooltip() end
 end
 
---- Handle mouse leave
-function BaseWidget:OnLeave()
-    GameTooltip:Hide()
-end
+function BaseWidget:OnLeave() GameTooltip:Hide() end
 
---- Handle click
 function BaseWidget:OnClick(button)
     if button == "LeftButton" and self.isDragging then return end
-    if self.clickFunc then
-        self.clickFunc(self, button)
+    if button == "RightButton" and not self.clickFunc then
+        self:ShowContextMenu()
+        return
     end
+    if self.clickFunc then self.clickFunc(self, button) end
 end
 
---- Handle dragging start
+-- [ CONTEXT MENU ] ----------------------------------------------------------------
+
+function BaseWidget:ShowContextMenu()
+    if not addon.Menu then return end
+    local items = self:BuildContextMenuItems()
+    addon.Menu:Open(self.frame, items, self.name)
+end
+
+function BaseWidget:BuildContextMenuItems()
+    local items = {}
+    if self.GetMenuItems then
+        local custom = self:GetMenuItems()
+        for _, item in ipairs(custom) do table.insert(items, item) end
+        table.insert(items, { text = "", isSeparator = true })
+    end
+    table.insert(items, {
+        text = "Hide Widget",
+        func = function()
+            if addon.WidgetManager then addon.WidgetManager:MoveToDrawer(self.name) end
+        end,
+    })
+    return items
+end
+
+-- [ DRAGGING ] --------------------------------------------------------------------
+
 function BaseWidget:OnDragStart()
     local WM = addon.WidgetManager
     if not WM or not WM:OnWidgetDragStart(self.name) then return end
-
     self.isDragging = true
     self.frame:SetParent(UIParent)
     self.frame:SetFrameStrata("TOOLTIP")
     self.frame:StartMoving()
-
     if not self.dragTicker then
-        self.dragTicker = C_Timer.NewTicker(0.05, function()
+        self.dragTicker = C_Timer.NewTicker(DRAG_TICKER_INTERVAL, function()
             if addon.WidgetManager then addon.WidgetManager:OnWidgetDragUpdate() end
         end)
     end
 end
 
---- Handle dragging stop
 function BaseWidget:OnDragStop()
     self.frame:StopMovingOrSizing()
     self.isDragging = false
-
-    if self.dragTicker then
-        self.dragTicker:Cancel()
-        self.dragTicker = nil
-    end
-
+    if self.dragTicker then self.dragTicker:Cancel(); self.dragTicker = nil end
     local WM = addon.WidgetManager
     if WM then WM:OnWidgetDragStop(self.name) end
 end
 
---- Called when docked
+-- [ DOCKING ] ---------------------------------------------------------------------
+
 function BaseWidget:OnDock(zone)
-    if self.frame and zone then
-        self.frame:SetSize(zone:GetWidth() - 4, zone:GetHeight() - 2)
-    end
+    if not self.frame or not zone then return end
+    local w = zone:GetWidth() - DOCK_PADDING_W
+    local h = zone:GetHeight() - DOCK_PADDING_H
+    self.frame:SetSize(w, h)
+    self.text:SetWidth(w - TEXT_PADDING)
+    self.text:SetWordWrap(false)
+    self.text:SetNonSpaceWrap(false)
 end
 
---- Called when undocked
 function BaseWidget:OnUndock()
-    if self.updateFunc then
-        self.updateFunc(self)
-    end
+    if self.updateFunc then self.updateFunc(self) end
 end
 
---- Start flashing the widget (for critical alerts)
+-- [ FLASH ] -----------------------------------------------------------------------
+
 function BaseWidget:Flash()
-    if not self.frame then return end
-    if not self.flashing then
-        self.flashing = true
-        UIFrameFlash(self.frame, 0.5, 0.5, -1, true, 0, 0, nil)
-    end
+    if not self.frame or self.flashing then return end
+    self.flashing = true
+    UIFrameFlash(self.frame, FLASH_ON_SEC, FLASH_OFF_SEC, -1, true, 0, 0, nil)
 end
 
---- Stop flashing the widget
 function BaseWidget:StopFlash()
-    if not self.frame then return end
-    if self.flashing then
-        self.flashing = false
-        UIFrameFlashStop(self.frame)
-    end
+    if not self.frame or not self.flashing then return end
+    self.flashing = false
+    UIFrameFlashStop(self.frame)
 end

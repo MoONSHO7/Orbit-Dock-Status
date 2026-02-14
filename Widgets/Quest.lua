@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local QuestWidget = addon.BaseWidget:New("Quest")
 addon.QuestWidget = QuestWidget
 
--- [ SETTINGS ] ----------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ SETTINGS ] --------------------------------------------------------------------
 
 QuestWidget.settings = {
     autoAccept = true,
@@ -21,7 +27,7 @@ QuestWidget.settings = {
     skipGossip = true, -- For auto-turn in
 }
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function QuestWidget:GetQuestSummary()
     local num = C_QuestLog.GetNumQuestLogEntries()
@@ -44,7 +50,7 @@ function QuestWidget:GetQuestSummary()
     return count, 25, zones -- 25 is standard limit, or 35 in DF? C_QuestLog.GetMaxNumQuestsCanAccept()
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function QuestWidget:Update()
     local count, max, _ = self:GetQuestSummary()
@@ -55,7 +61,7 @@ function QuestWidget:Update()
     self:SetText(string.format("%s%d|r/%d Quests", color, count, max))
 end
 
--- [ AUTOMATION ] --------------------------------------------------------------
+-- [ AUTOMATION ] ------------------------------------------------------------------
 
 function QuestWidget:HandleGossip()
     if not self.settings.skipGossip then return end
@@ -107,7 +113,7 @@ function QuestWidget:HandleQuestComplete()
     end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function QuestWidget:OpenMenu()
     if not addon.Menu then return end
@@ -161,10 +167,10 @@ function QuestWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function QuestWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
@@ -184,6 +190,8 @@ function QuestWidget:OnLoad()
     self:RegisterEvent("QUEST_COMPLETE", function() self:HandleQuestComplete() end)
 
     -- Register with manager
+    self:SetCategory("GAMEPLAY")
+
     self:Register()
 
     -- Initial update
@@ -193,6 +201,7 @@ end
 -- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() QuestWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() QuestWidget:OnLoad() end)
 end)

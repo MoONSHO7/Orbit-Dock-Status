@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local GroupWidget = addon.BaseWidget:New("Group")
 addon.GroupWidget = GroupWidget
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function GroupWidget:GetGroupInfo()
     if not IsInGroup() then return 0, 0, 0, 0 end
@@ -40,7 +46,7 @@ function GroupWidget:GetGroupInfo()
     return total, tanks, healers, dps
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function GroupWidget:Update()
     local total, t, h, d = self:GetGroupInfo()
@@ -53,7 +59,7 @@ function GroupWidget:Update()
     end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function GroupWidget:OpenMenu()
     if not addon.Menu then return end
@@ -124,10 +130,10 @@ function GroupWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function GroupWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
@@ -140,6 +146,8 @@ function GroupWidget:OnLoad()
     self:RegisterEvent("READY_CHECK")
 
     -- Register with manager
+    self:SetCategory("SOCIAL")
+
     self:Register()
 
     -- Initial update
@@ -149,6 +157,7 @@ end
 -- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() GroupWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() GroupWidget:OnLoad() end)
 end)

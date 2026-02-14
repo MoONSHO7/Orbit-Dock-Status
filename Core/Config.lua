@@ -11,13 +11,13 @@ if not Orbit then return end
 local Config = {}
 addon.Config = Config
 
--- [ VARIABLES ] ---------------------------------------------------------------
+-- [ VARIABLES ] -------------------------------------------------------------------
 
 local DB = nil
 local DEFAULTS = {}
 local CALLBACKS = {}
 
--- [ HELPERS ] -----------------------------------------------------------------
+-- [ HELPERS ] ---------------------------------------------------------------------
 
 local function DeepCopy(orig)
     local orig_type = type(orig)
@@ -27,7 +27,6 @@ local function DeepCopy(orig)
         for orig_key, orig_value in next, orig, nil do
             copy[DeepCopy(orig_key)] = DeepCopy(orig_value)
         end
-        setmetatable(copy, DeepCopy(getmetatable(orig)))
     else -- number, string, boolean, etc
         copy = orig
     end
@@ -45,7 +44,7 @@ local function MergeTables(dest, src)
     return dest
 end
 
--- [ API ] ---------------------------------------------------------------------
+-- [ API ] -------------------------------------------------------------------------
 
 --- Initialize the configuration system
 function Config:Init()

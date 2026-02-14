@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local ProfessionsWidget = addon.BaseWidget:New("Professions")
 addon.ProfessionsWidget = ProfessionsWidget
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function ProfessionsWidget:GetProfessions()
     local prof1, prof2, arch, fish, cook = GetProfessions()
@@ -36,7 +42,7 @@ function ProfessionsWidget:GetProfessions()
     return list
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function ProfessionsWidget:Update()
     local list = self:GetProfessions()
@@ -53,7 +59,7 @@ function ProfessionsWidget:Update()
     self:SetText(text)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function ProfessionsWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -88,18 +94,21 @@ function ProfessionsWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function ProfessionsWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    self:RegisterEvent("TRADE_SKILL_UPDATE")
+    self:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
     self:RegisterEvent("SKILL_LINES_CHANGED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    self:SetCategory("GAMEPLAY")
+
 
     self:Register()
     self:Update()
@@ -107,6 +116,7 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() ProfessionsWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() ProfessionsWidget:OnLoad() end)
 end)

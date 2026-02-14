@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local DungeonWidget = addon.BaseWidget:New("Dungeon")
 addon.DungeonWidget = DungeonWidget
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function DungeonWidget:GetSavedInstances()
     local saved = {}
@@ -68,7 +74,7 @@ function DungeonWidget:GetGreatVault()
     return raids, mythic, pvp
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function DungeonWidget:Update()
     local mapName, level = self:GetKeystone()
@@ -80,7 +86,7 @@ function DungeonWidget:Update()
     end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function DungeonWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -129,33 +135,36 @@ function DungeonWidget:OnClick(button)
     PVEFrame_ToggleFrame()
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function DungeonWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
-    -- Setup handlers
+
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+
     self:RegisterEvent("UPDATE_INSTANCE_INFO")
-    self:RegisterEvent("BAG_UPDATE") -- For keystone check
+    self:RegisterEvent("BAG_UPDATE")
     self:RegisterEvent("CHALLENGE_MODE_START")
     self:RegisterEvent("CHALLENGE_MODE_COMPLETED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Register with manager
+
+    self:SetCategory("GAMEPLAY")
+
     self:Register()
 
-    -- Initial update
+
     self:Update()
 end
 
--- Initialize
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() DungeonWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() DungeonWidget:OnLoad() end)
 end)

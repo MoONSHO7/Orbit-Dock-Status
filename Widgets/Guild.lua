@@ -13,7 +13,7 @@ if not addon.BaseWidget then return end
 local GuildWidget = addon.BaseWidget:New("Guild")
 addon.GuildWidget = GuildWidget
 
--- [ CONSTANTS ] ---------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
 
 local COLORS = {
     GREEN = "|cff00ff00",
@@ -23,7 +23,13 @@ local COLORS = {
     WHITE = "|cffffffff",
 }
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+local MAX_TOOLTIP_DISPLAY = 30
+local ROSTER_REFRESH_SEC = 30
+local FRAME_WIDTH = 80
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function GuildWidget:GetClassColor(classFileName)
     if not classFileName then return COLORS.WHITE end
@@ -65,12 +71,12 @@ function GuildWidget:GetGuildData()
                 classFileName = classFileName,
                 zone = zone,
                 note = note,
-                status = status, -- 1=Away, 2=Busy, 0=Online
+                status = status,
             })
         end
     end
 
-    -- Sort by Rank (high to low) then Name
+    -- Charisma modifier determines who sits at the guild master's table first
     table.sort(members, function(a, b)
         if a.rankIndex == b.rankIndex then
             return a.name < b.name
@@ -81,7 +87,7 @@ function GuildWidget:GetGuildData()
     return online, total, members
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function GuildWidget:Update()
     if not IsInGuild() then
@@ -95,7 +101,7 @@ function GuildWidget:Update()
     self:SetText(string.format("%s%d|r%s/%d|r Guild", color, online, COLORS.GREY, total))
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function GuildWidget:ShowTooltip()
     if not IsInGuild() then
@@ -122,11 +128,11 @@ function GuildWidget:ShowTooltip()
     
     GameTooltip:AddLine(" ")
     
-    -- Headers
+    -- The guild notice board
     GameTooltip:AddLine(string.format("%-20s %-10s %-10s %-15s", "Name", "Level", "Rank", "Zone"), 0.7, 0.7, 0.7)
     
-    -- Limit list to avoid screen overflow (e.g., max 30)
-    local maxDisplay = 30
+    -- Even the longest adventurer roster has a scroll limit
+    local maxDisplay = MAX_TOOLTIP_DISPLAY
     for i, m in ipairs(members) do
         if i > maxDisplay then
             GameTooltip:AddLine(string.format("... and %d more", online - maxDisplay), 0.5, 0.5, 0.5)
@@ -156,10 +162,10 @@ function GuildWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function GuildWidget:OnLoad()
-    self:CreateFrame(80, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
     
     -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
@@ -176,14 +182,11 @@ function GuildWidget:OnLoad()
         C_GuildInfo.GuildRoster()
     end
     
-    -- Periodic refresh (every 30s to catch status changes if event doesn't fire)
-    C_Timer.NewTicker(30, function()
-        if IsInGuild() and self.isEnabled then
-            C_GuildInfo.GuildRoster()
-        end
-    end)
+    self:SetUpdateTier("GLACIAL")
     
     -- Register with manager
+    self:SetCategory("SOCIAL")
+
     self:Register()
     
     -- Initial update
@@ -193,6 +196,7 @@ end
 -- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() GuildWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() GuildWidget:OnLoad() end)
 end)

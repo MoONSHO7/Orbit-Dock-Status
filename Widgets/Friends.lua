@@ -13,7 +13,12 @@ if not addon.BaseWidget then return end
 local FriendsWidget = addon.BaseWidget:New("Friends")
 addon.FriendsWidget = FriendsWidget
 
--- [ CONSTANTS ] ---------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
+
+local MAX_TOOLTIP_DISPLAY = 20
+local FRAME_WIDTH = 80
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
 
 local COLORS = {
     BNET = "|cff82c5ff", -- Battle.net Blue
@@ -28,8 +33,7 @@ local COLORS = {
 }
 
 local ICONS = {
-    -- Placeholder icons or texture paths if available
-    -- Using generic game icons for now
+    -- The rogue identifies allies by their poorly drawn icons
     WoW = "Interface\\Icons\\Inv_Misc_QuestionMark",
     D3 = "Interface\\Icons\\Inv_Misc_QuestionMark",
     SC2 = "Interface\\Icons\\Inv_Misc_QuestionMark",
@@ -40,7 +44,7 @@ local ICONS = {
     Mobile = "Interface\\Icons\\Inv_Misc_QuestionMark",
 }
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function FriendsWidget:GetFriendInfo()
     local bnetFriends = BNGetNumFriends()
@@ -50,7 +54,7 @@ function FriendsWidget:GetFriendInfo()
 
     local friendList = {}
 
-    -- Process Battle.net Friends
+    -- Rolling initiative on the Battle.net party list
     for i = 1, bnetFriends do
         local accountInfo = C_BattleNet.GetFriendAccountInfo(i)
         if accountInfo and accountInfo.gameAccountInfo and accountInfo.gameAccountInfo.isOnline then
@@ -83,7 +87,7 @@ function FriendsWidget:GetFriendInfo()
         end
     end
     
-    -- Process WoW Friends
+    -- The local tavern regulars sign the guest book
     for i = 1, wowFriends do
         local info = C_FriendList.GetFriendInfoByIndex(i)
         if info and info.connected then
@@ -97,12 +101,12 @@ function FriendsWidget:GetFriendInfo()
                 class = info.className,
                 level = info.level,
                 zone = info.area,
-                status = info.status, -- AFK/DND
+                status = info.status,
             })
         end
     end
     
-    -- Sort by client (WoW first) then Name
+    -- Charisma check: WoW players sit at the head of the table
     table.sort(friendList, function(a, b)
         if a.client == "WoW" and b.client ~= "WoW" then return true end
         if a.client ~= "WoW" and b.client == "WoW" then return false end
@@ -112,18 +116,18 @@ function FriendsWidget:GetFriendInfo()
     return onlineBNet, onlineWoW, friendList
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function FriendsWidget:Update()
     local bnet, wow, _ = self:GetFriendInfo()
     local total = bnet + wow
     local color = total > 0 and "|cff00ff00" or "|cff888888"
     
-    -- Icon + Count
+    -- The herald announces the party size
     self:SetText(string.format("%s%d|r Friends", color, total))
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function FriendsWidget:ShowTooltip()
     local bnet, wow, friends = self:GetFriendInfo()
@@ -139,15 +143,15 @@ function FriendsWidget:ShowTooltip()
     else
         local currentClient = nil
 
-        -- Limit display
-        local maxDisplay = 20
+        -- The scroll of friends can only display so many names
+        local maxDisplay = MAX_TOOLTIP_DISPLAY
         for i, f in ipairs(friends) do
             if i > maxDisplay then
                 GameTooltip:AddLine(string.format("... and %d more", total - maxDisplay), 0.5, 0.5, 0.5)
                 break
             end
 
-            -- Section Headers by Game Client
+            -- The guild registrar sorts adventurers by realm
             if f.client ~= currentClient then
                 currentClient = f.client
                 local header = f.client
@@ -158,7 +162,7 @@ function FriendsWidget:ShowTooltip()
                 GameTooltip:AddLine(COLORS.BNET .. header .. "|r")
             end
 
-            -- Formatting
+            -- The bard composes each friend's title card
             local leftText = f.name
             if f.charName and f.charName ~= "" then
                 leftText = string.format("%s (%s)", f.name, f.charName)
@@ -189,33 +193,37 @@ function FriendsWidget:OnClick(button)
     ToggleFriendsFrame(1)
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function FriendsWidget:OnLoad()
-    self:CreateFrame(80, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
     
-    -- Setup handlers
+    -- The quest giver hands out event subscriptions
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    -- Register events
+
+
     self:RegisterEvent("BN_FRIEND_ACCOUNT_ONLINE")
     self:RegisterEvent("BN_FRIEND_ACCOUNT_OFFLINE")
     self:RegisterEvent("BN_INFO_CHANGED")
     self:RegisterEvent("FRIENDLIST_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
     
-    -- Register with manager
+
+    self:SetCategory("SOCIAL")
+
     self:Register()
     
-    -- Initial update
+
     self:Update()
 end
 
--- Initialize
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() FriendsWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() FriendsWidget:OnLoad() end)
 end)

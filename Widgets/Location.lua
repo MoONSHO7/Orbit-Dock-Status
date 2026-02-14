@@ -13,17 +13,31 @@ if not addon.BaseWidget then return end
 local LocationWidget = addon.BaseWidget:New("Location")
 addon.LocationWidget = LocationWidget
 
--- [ CONSTANTS ] ---------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
 
 local COLORS = {
-    SANCTUARY = "|cff74d5f2", -- Light Blue
-    CONTESTED = "|cffeda55f", -- Orange
-    HOSTILE = "|cffff0000",   -- Red
-    FRIENDLY = "|cff00ff00",  -- Green
-    NEUTRAL = "|cffffffff",   -- White
+    SANCTUARY = "|cff74d5f2",
+    CONTESTED = "|cffeda55f",
+    HOSTILE = "|cffff0000",
+    FRIENDLY = "|cff00ff00",
+    NEUTRAL = "|cffffffff",
 }
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+local COORD_MULTIPLIER = 100
+local COORD_UPDATE_SEC = 0.5
+local FRAME_WIDTH = 150
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+local INSTANCE_TYPES = {
+    party = "Dungeon",
+    raid = "Raid",
+    arena = "Arena",
+    pvp = "BG",
+    scenario = "Scenario",
+}
+
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function LocationWidget:GetZoneColor()
     local pvpType = GetZonePVPInfo()
@@ -42,27 +56,31 @@ function LocationWidget:GetCoordinates()
     local pos = C_Map.GetPlayerMapPosition(mapID, "player")
     if not pos then return nil, nil end
 
-    return pos.x * 100, pos.y * 100
+    return pos.x * COORD_MULTIPLIER, pos.y * COORD_MULTIPLIER
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+function LocationWidget:GetInstancePrefix()
+    local _, instanceType, difficultyID = GetInstanceInfo()
+    if instanceType == "none" then return "" end
+    local diffName = GetDifficultyInfo(difficultyID) or ""
+    local keystoneLevel = C_ChallengeMode and C_ChallengeMode.GetActiveKeystoneInfo and C_ChallengeMode.GetActiveKeystoneInfo()
+    if keystoneLevel and keystoneLevel > 0 then return string.format("|cffff8000[M+%d]|r ", keystoneLevel) end
+    local label = INSTANCE_TYPES[instanceType] or instanceType
+    return string.format("|cffffcc00[%s]|r ", label)
+end
 
 function LocationWidget:Update()
     local subZone = GetSubZoneText()
     local zone = GetZoneText()
     local text = (subZone ~= "") and subZone or zone
     local color = self:GetZoneColor()
-
+    local prefix = self:GetInstancePrefix()
     local x, y = self:GetCoordinates()
-    local coordStr = ""
-    if x and y then
-        coordStr = string.format(" |cffffffff(%.1f, %.1f)|r", x, y)
-    end
-    
-    self:SetText(color .. text .. "|r" .. coordStr)
+    local coordStr = (x and y) and string.format(" |cffffffff(%.1f, %.1f)|r", x, y) or ""
+    self:SetText(prefix .. color .. text .. "|r" .. coordStr)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function LocationWidget:OpenTravelMenu()
     if not addon.Menu then return end
@@ -146,35 +164,37 @@ function LocationWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function LocationWidget:OnLoad()
-    self:CreateFrame(150, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
-    -- Setup handlers
+    -- The ranger's survival kit: tracking spells and a good compass
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+
     self:RegisterEvent("ZONE_CHANGED")
     self:RegisterEvent("ZONE_CHANGED_INDOORS")
     self:RegisterEvent("ZONE_CHANGED_NEW_AREA")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Coordinates ticker (every 0.5s)
-    C_Timer.NewTicker(0.5, function() self:Update() end)
+    self:SetUpdateTier("NORMAL")
     
-    -- Register with manager
+
+    self:SetCategory("WORLD")
+
     self:Register()
     
-    -- Initial update
+
     self:Update()
 end
 
--- Initialize
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() LocationWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() LocationWidget:OnLoad() end)
 end)

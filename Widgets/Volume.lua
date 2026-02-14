@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local VolumeWidget = addon.BaseWidget:New("Volume")
 addon.VolumeWidget = VolumeWidget
 
--- [ HELPERS ] -----------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPERS ] ---------------------------------------------------------------------
 
 function VolumeWidget:GetVolumeText(level)
     if level == 0 then return "|cff888888Muted|r" end
@@ -30,7 +36,7 @@ function VolumeWidget:GetIcon(level)
     return "|TInterface\\Common\\Indicator-Green:14|t"
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function VolumeWidget:Update()
     local level = tonumber(GetCVar("Sound_MasterVolume"))
@@ -43,7 +49,7 @@ function VolumeWidget:Update()
     end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function VolumeWidget:OnScroll(delta)
     local level = tonumber(GetCVar("Sound_MasterVolume"))
@@ -61,7 +67,7 @@ end
 
 function VolumeWidget:OnClick(button)
     if button == "LeftButton" then
-        -- Toggle Mute
+        -- Silence spell cast on the entire realm
         local enabled = GetCVar("Sound_EnableAllSound") == "1"
         if enabled then
             SetCVar("Sound_EnableAllSound", "0")
@@ -73,7 +79,7 @@ function VolumeWidget:OnClick(button)
         self:Update()
 
     elseif button == "RightButton" then
-        -- Open Menu
+        -- The bard opens the tavern's mixing board
         if not addon.Menu then return end
 
         local channels = {
@@ -114,12 +120,12 @@ function VolumeWidget:ShowTooltip()
     GameTooltip:Show()
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function VolumeWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
-    -- Enable Mouse Wheel
+    -- Even the volume knob answers to the scroll wheel
     self.frame:EnableMouseWheel(true)
     self.frame:SetScript("OnMouseWheel", function(_, delta) self:OnScroll(delta) end)
 
@@ -127,9 +133,12 @@ function VolumeWidget:OnLoad()
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Events
+
     self:RegisterEvent("CVAR_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    self:SetCategory("SYSTEM")
+
 
     self:Register()
     self:Update()
@@ -137,6 +146,7 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() VolumeWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() VolumeWidget:OnLoad() end)
 end)

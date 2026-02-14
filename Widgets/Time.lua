@@ -13,7 +13,11 @@ if not addon.BaseWidget then return end
 local TimeWidget = addon.BaseWidget:New("Time")
 addon.TimeWidget = TimeWidget
 
--- [ CONSTANTS ] ---------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
+
+local FRAME_WIDTH = 60
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
 
 local COLORS = {
     WHITE = "|cffffffff",
@@ -21,16 +25,16 @@ local COLORS = {
     GOLD = "|cffffd700",
 }
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function TimeWidget:Update()
     local date = date("*t")
     local hour, minute = date.hour, date.min
     
-    -- Format: HH:MM
+
     local timeStr = string.format("%02d:%02d", hour, minute)
     
-    -- Add AM/PM if 12h format (Orbit Settings or CVar check)
+
     local use24 = GetCVar("timeMgrUseMilitaryTime") == "1"
     if not use24 then
         local ampm = (hour >= 12) and "PM" or "AM"
@@ -42,7 +46,7 @@ function TimeWidget:Update()
     self:SetText(COLORS.WHITE .. timeStr)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function TimeWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -50,8 +54,8 @@ function TimeWidget:ShowTooltip()
     GameTooltip:AddLine("Time", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
     
-    local date = date("*t")
-    local localTime = string.format("%02d:%02d", date.hour, date.min)
+    local localDate = date("*t")
+    local localTime = string.format("%02d:%02d", localDate.hour, localDate.min)
     local utcDate = date("!*t")
     local utcTime = string.format("%02d:%02d", utcDate.hour, utcDate.min)
     local _, realmHour, realmMinute = GetGameTime()
@@ -64,7 +68,7 @@ function TimeWidget:ShowTooltip()
     GameTooltip:AddLine(" ")
     GameTooltip:AddDoubleLine("Date:", date("%A, %B %d, %Y"), 1, 1, 1, 1, 1, 1)
 
-    -- Check for Calendar Invites
+    -- The party checks if any holiday quests are posted at the tavern
     local numInvites = C_Calendar.GetNumPendingInvites()
     if numInvites > 0 then
         GameTooltip:AddLine(" ")
@@ -87,32 +91,35 @@ function TimeWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function TimeWidget:OnLoad()
-    self:CreateFrame(60, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
     
-    -- Setup handlers
+
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
     
-    -- Periodic update (every second to catch minute changes precisely)
+    -- The clockwork gnome updates every second — obsessive but precise
     self:SetUpdateFunc(function() self:Update() end)
-    C_Timer.NewTicker(1, function() self:Update() end)
+    self:SetUpdateTier("NORMAL")
     
-    -- Register events
+
     self:RegisterEvent("CALENDAR_UPDATE_PENDING_INVITES")
     
-    -- Register with manager
+
+    self:SetCategory("SYSTEM")
+
     self:Register()
     
-    -- Initial update
+
     self:Update()
 end
 
--- Initialize
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() TimeWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() TimeWidget:OnLoad() end)
 end)

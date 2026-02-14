@@ -1,44 +1,48 @@
 -- Speed.lua
--- Advanced Movement Speed widget for StatusDock
--- Features: Real-time speed tracking, Dragonriding graph
+-- Movement Speed widget for StatusDock
 
 local _, addon = ...
 
 ---@type Orbit
 local Orbit = Orbit
 if not Orbit then return end
-
 if not addon.BaseWidget then return end
 
 local SpeedWidget = addon.BaseWidget:New("Speed")
 addon.SpeedWidget = SpeedWidget
 
--- [ HISTORY ] -----------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
 
-SpeedWidget.history = {}
-local HISTORY_SIZE = 60 -- Store last 60 ticks (30 seconds at 0.5s rate)
+local BASE_RUN_SPEED = 7
+local PERCENT_MULTIPLIER = 100
+local UPDATE_INTERVAL_SEC = 0.2
+local HISTORY_SIZE = 60
+local GRAPH_WIDTH = 200
+local GRAPH_HEIGHT = 50
+local GRAPH_OFFSET_Y = -5
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ HISTORY ] ---------------------------------------------------------------------
+
+local RingBuffer = addon.Formatting.RingBuffer
+SpeedWidget.history = RingBuffer:New(HISTORY_SIZE)
+
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function SpeedWidget:Update()
-    local unit = "player"
-    local currentSpeed, runSpeed, flightSpeed, swimSpeed = GetUnitSpeed(unit)
+    local currentSpeed, runSpeed = GetUnitSpeed("player")
 
-    local speed = (currentSpeed / runSpeed) * 100
-    -- Dragonriding logic: Check for aura or speed > 400%
-    if IsFlying() then
-        speed = (currentSpeed / 7) * 100 -- approx
-    end
+    local speed = (currentSpeed / runSpeed) * PERCENT_MULTIPLIER
+    if IsFlying() then speed = (currentSpeed / BASE_RUN_SPEED) * PERCENT_MULTIPLIER end
 
-    -- Format: "Speed: 100%"
     self:SetText(string.format("Speed: %.0f%%", speed))
 
-    -- Store history
-    table.insert(self.history, speed)
-    if #self.history > HISTORY_SIZE then table.remove(self.history, 1) end
+    self.history:Push(speed)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function SpeedWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -46,48 +50,43 @@ function SpeedWidget:ShowTooltip()
     GameTooltip:AddLine("Movement Speed", 1, 0.82, 0)
     GameTooltip:AddLine(" ")
 
-    local currentSpeed, runSpeed, flightSpeed, swimSpeed = GetUnitSpeed("player")
-    local pct = (currentSpeed / 7) * 100
+    local currentSpeed = GetUnitSpeed("player")
+    local pct = (currentSpeed / BASE_RUN_SPEED) * PERCENT_MULTIPLIER
 
     GameTooltip:AddDoubleLine("Current:", string.format("%.0f%%", pct), 1, 1, 1, 1, 1, 1)
-
     GameTooltip:Show()
 
-    -- Draw Graph
     if not self.graphFrame then
         self.graphFrame = CreateFrame("Frame", nil, GameTooltip)
-        self.graphFrame:SetSize(200, 50)
-        self.graph = addon.Graph:New(self.graphFrame, 200, 50)
+        self.graphFrame:SetSize(GRAPH_WIDTH, GRAPH_HEIGHT)
+        self.graph = addon.Graph:New(self.graphFrame, GRAPH_WIDTH, GRAPH_HEIGHT)
     end
 
     self.graphFrame:SetParent(GameTooltip)
-    self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, -5)
+    self.graphFrame:SetPoint("TOP", GameTooltip, "BOTTOM", 0, GRAPH_OFFSET_Y)
     self.graphFrame:Show()
 
     self.graph:Clear()
-    self.graph:SetColor(0, 0.7, 1, 1) -- Blue for speed
-    for _, val in ipairs(self.history) do
-        self.graph:AddData(val)
-    end
+    self.graph:SetColor(0, 0.7, 1, 1)
+    for _, val in self.history:Iterate() do self.graph:AddData(val) end
     self.graph:Draw()
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function SpeedWidget:OnLoad()
-    self:CreateFrame(100, 20)
-
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
-
-    -- High frequency update for speed
-    C_Timer.NewTicker(0.2, function() self:Update() end)
-
+    self:SetUpdateFunc(function() self:Update() end)
+    self:SetCategory("SYSTEM")
     self:Register()
+    self:SetUpdateTier("NORMAL")
     self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() SpeedWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() SpeedWidget:OnLoad() end)
 end)

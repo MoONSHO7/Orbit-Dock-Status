@@ -13,18 +13,24 @@ if not addon.BaseWidget then return end
 local EquipmentWidget = addon.BaseWidget:New("Equipment")
 addon.EquipmentWidget = EquipmentWidget
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function EquipmentWidget:GetCurrentSet()
-    local setID = C_EquipmentSet.GetEquipmentSetAssignedToPlayer()
-    if setID then
-        local name, icon, setID, isEquipped, numItems, numEquipped, numInInventory, numLost, numIgnored = C_EquipmentSet.GetEquipmentSetInfo(setID)
-        return name, icon, numEquipped, numItems
+    local setIDs = C_EquipmentSet.GetEquipmentSetIDs()
+    for _, setID in ipairs(setIDs) do
+        local name, icon, _, isEquipped, numItems, numEquipped = C_EquipmentSet.GetEquipmentSetInfo(setID)
+        if isEquipped then return name, icon, numEquipped, numItems, setID end
     end
-    return "No Set", nil, 0, 0
+    return "No Set", nil, 0, 0, nil
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function EquipmentWidget:Update()
     local name, icon, equipped, total = self:GetCurrentSet()
@@ -35,14 +41,14 @@ function EquipmentWidget:Update()
     end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function EquipmentWidget:OpenMenu()
     if not addon.Menu then return end
 
     local items = {}
     local setIDs = C_EquipmentSet.GetEquipmentSetIDs()
-    local currentSetID = C_EquipmentSet.GetEquipmentSetAssignedToPlayer()
+    local _, _, _, _, currentSetID = self:GetCurrentSet()
 
     for _, id in ipairs(setIDs) do
         local name, icon = C_EquipmentSet.GetEquipmentSetInfo(id)
@@ -93,10 +99,10 @@ function EquipmentWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function EquipmentWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
@@ -105,12 +111,16 @@ function EquipmentWidget:OnLoad()
     self:RegisterEvent("EQUIPMENT_SETS_CHANGED")
     self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
 
+    self:SetCategory("CHARACTER")
+
+
     self:Register()
     self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() EquipmentWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() EquipmentWidget:OnLoad() end)
 end)

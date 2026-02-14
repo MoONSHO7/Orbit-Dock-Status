@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local ItemLevelWidget = addon.BaseWidget:New("ItemLevel")
 addon.ItemLevelWidget = ItemLevelWidget
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 80
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function ItemLevelWidget:GetItemLevelInfo()
     local equipped = select(2, GetAverageItemLevel())
@@ -38,7 +44,7 @@ function ItemLevelWidget:GetItemLevelInfo()
     return equipped, total, items
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function ItemLevelWidget:Update()
     local equipped, total = GetAverageItemLevel()
@@ -47,7 +53,7 @@ function ItemLevelWidget:Update()
     self:SetText(string.format("iLvl: %s%.1f|r", color, equipped))
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function ItemLevelWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -85,10 +91,10 @@ function ItemLevelWidget:OnClick(button)
     ToggleCharacter("PaperDollFrame")
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function ItemLevelWidget:OnLoad()
-    self:CreateFrame(80, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
     
     -- Setup handlers
     self:SetUpdateFunc(function() self:Update() end)
@@ -100,6 +106,8 @@ function ItemLevelWidget:OnLoad()
     self:RegisterEvent("PLAYER_AVG_ITEM_LEVEL_UPDATE")
     
     -- Register with manager
+    self:SetCategory("CHARACTER")
+
     self:Register()
     
     -- Initial update
@@ -109,6 +117,7 @@ end
 -- Initialize
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() ItemLevelWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() ItemLevelWidget:OnLoad() end)
 end)

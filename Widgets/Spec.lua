@@ -13,7 +13,13 @@ if not addon.BaseWidget then return end
 local SpecWidget = addon.BaseWidget:New("Spec")
 addon.SpecWidget = SpecWidget
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function SpecWidget:GetSpecInfo()
     local specIndex = GetSpecialization()
@@ -38,7 +44,7 @@ function SpecWidget:GetLootSpecInfo()
     return name, icon
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function SpecWidget:Update()
     local name, icon, role = self:GetSpecInfo()
@@ -47,19 +53,19 @@ function SpecWidget:Update()
         return
     end
 
-    -- Icon + Name
+
     self:SetText(string.format("|T%s:14:14:0:0:64:64:4:60:4:60|t %s", icon, name))
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function SpecWidget:OnClick(button)
     if button == "LeftButton" then
         if IsShiftKeyDown() then
-            -- Loot Spec Menu
+            -- The paladin checks their divine gear assignment
             self:OpenLootSpecMenu()
         else
-            -- Toggle Talent Frame
+            -- The class trainer's forbidden scroll of talent knowledge
             if PlayerSpellsFrame then
                 PlayerSpellsFrame:SetTab(1)
                 PlayerSpellsFrame:SetShown(not PlayerSpellsFrame:IsShown())
@@ -68,7 +74,7 @@ function SpecWidget:OnClick(button)
             end
         end
     elseif button == "RightButton" then
-        -- Spec Switch Menu
+        -- Multiclass into a different subclass
         self:OpenSpecMenu()
     end
 end
@@ -99,7 +105,7 @@ function SpecWidget:OpenLootSpecMenu()
     local currentLootSpec = GetLootSpecialization()
     local numSpecs = GetNumSpecializations()
 
-    -- "Current Spec" Option
+    -- Choosing who gets the loot: the age-old party debate
     table.insert(items, {
         text = "Current Specialization",
         func = function() SetLootSpecialization(0) end,
@@ -139,31 +145,34 @@ function SpecWidget:ShowTooltip()
     GameTooltip:Show()
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function SpecWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
-    -- Setup handlers
+
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    -- Register events
+
     self:RegisterEvent("PLAYER_SPECIALIZATION_CHANGED")
     self:RegisterEvent("PLAYER_LOOT_SPEC_UPDATED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
-    -- Register with manager
+
+    self:SetCategory("CHARACTER")
+
     self:Register()
     
-    -- Initial update
+
     self:Update()
 end
 
--- Initialize
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() SpecWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() SpecWidget:OnLoad() end)
 end)

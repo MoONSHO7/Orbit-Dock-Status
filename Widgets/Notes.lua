@@ -13,13 +13,19 @@ if not addon.BaseWidget then return end
 local NotesWidget = addon.BaseWidget:New("Notes")
 addon.NotesWidget = NotesWidget
 
--- [ SETTINGS ] ----------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ SETTINGS ] --------------------------------------------------------------------
 
 NotesWidget.settings = {
     note = "Click to edit note...",
 }
 
--- [ EDIT BOX ] ----------------------------------------------------------------
+-- [ EDIT BOX ] --------------------------------------------------------------------
 
 local function CreateEditFrame()
     local f = CreateFrame("Frame", "OrbitStatusNotesFrame", UIParent, "BackdropTemplate")
@@ -77,7 +83,7 @@ local function CreateEditFrame()
     return f
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function NotesWidget:Update()
     local note = self.settings.note or "Click to edit..."
@@ -90,7 +96,7 @@ function NotesWidget:Update()
     self:SetText("|cffffd700Note:|r " .. firstLine)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function NotesWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -116,10 +122,10 @@ function NotesWidget:OnClick(button)
     self.editFrame:Show()
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function NotesWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     -- Load settings
     if addon.Config then
@@ -135,12 +141,16 @@ function NotesWidget:OnLoad()
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
+    self:SetCategory("UTILITY")
+
+
     self:Register()
     self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() NotesWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() NotesWidget:OnLoad() end)
 end)

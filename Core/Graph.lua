@@ -10,7 +10,7 @@ if not Orbit then return end
 local Graph = {}
 addon.Graph = Graph
 
--- [ DRAWING ] -----------------------------------------------------------------
+-- [ DRAWING ] ---------------------------------------------------------------------
 
 --- Create a graph on a parent frame
 ---@param parent frame Frame to draw on
@@ -46,10 +46,9 @@ function Graph:New(parent, width, height)
 
     function graph:AddData(value)
         table.insert(self.points, value)
-        if #self.points > width then -- limit points to width
+        if #self.points > width then
             table.remove(self.points, 1)
         end
-        self:Draw()
     end
 
     function graph:Draw()

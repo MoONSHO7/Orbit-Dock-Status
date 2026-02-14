@@ -10,18 +10,48 @@ if not Orbit then return end
 local WidgetManager = {}
 addon.WidgetManager = WidgetManager
 
--- Registry of all available widgets
+-- [ CONSTANTS ] -------------------------------------------------------------------
+
+local PERSISTENCE_DELAY_SEC = 0.3
+local ZONE_BORDER_R = 0.4
+local ZONE_BORDER_G = 0.4
+local ZONE_BORDER_B = 0.4
+local ZONE_BORDER_A = 0.5
+local HIGHLIGHT_R = 0.0
+local HIGHLIGHT_G = 0.8
+local HIGHLIGHT_B = 1.0
+local HIGHLIGHT_A = 1.0
+
+local WIDGET_CATEGORIES = {
+    SYSTEM    = { order = 1, label = "System" },
+    CHARACTER = { order = 2, label = "Character" },
+    SOCIAL    = { order = 3, label = "Social" },
+    GAMEPLAY  = { order = 4, label = "Gameplay" },
+    WORLD     = { order = 5, label = "World" },
+    UTILITY   = { order = 6, label = "Utility" },
+}
+addon.WIDGET_CATEGORIES = WIDGET_CATEGORIES
+
+local UPDATE_INTERVALS = {
+    FAST    = 0.5,
+    NORMAL  = 1.0,
+    SLOW    = 5.0,
+    GLACIAL = 60.0,
+}
+addon.UPDATE_INTERVALS = UPDATE_INTERVALS
+
+-- [ STATE ] -----------------------------------------------------------------------
+
 local widgets = {}
 local widgetOrder = {}
-
--- Dock reference (set by StatusDock)
 local statusDock = nil
-
--- Drag state tracking
 local draggedWidget = nil
 local highlightedZone = nil
+local dragStartZone = nil
+local schedulerTickers = {}
+local schedulerCallbacks = {}
 
--- [ REGISTRATION ] ------------------------------------------------------------
+-- [ REGISTRATION ] ----------------------------------------------------------------
 
 --- Create and register a new widget using BaseWidget
 ---@param name string Widget name
@@ -37,21 +67,23 @@ end
 ---@param widgetData table Widget data: { frame, name, onDock, onUndock, onEnable, onDisable }
 function WidgetManager:Register(id, widgetData)
     if widgets[id] then return end
-    
     widgets[id] = {
         id = id,
         name = widgetData.name or id,
         frame = widgetData.frame,
+        category = widgetData.category or "UTILITY",
         onDock = widgetData.onDock,
         onUndock = widgetData.onUndock,
         onEnable = widgetData.onEnable,
         onDisable = widgetData.onDisable,
         isDocked = false,
         dockedSlot = nil,
-        isEnabled = true,  -- Widgets start enabled
+        isEnabled = true,
     }
     table.insert(widgetOrder, id)
 end
+
+function WidgetManager:GetWidgetCount() return #widgetOrder end
 
 --- Enable a widget (start tickers, register events)
 ---@param id string Widget ID
@@ -105,7 +137,7 @@ function WidgetManager:GetAllWidgets()
     return widgets
 end
 
--- [ DOCK INTEGRATION ] --------------------------------------------------------
+-- [ DOCK INTEGRATION ] ------------------------------------------------------------
 
 --- Set the status dock reference
 function WidgetManager:SetDock(dock)
@@ -146,7 +178,7 @@ function WidgetManager:GetZoneAtCursor()
     return nil
 end
 
--- [ DOCKING LOGIC ] -----------------------------------------------------------
+-- [ DOCKING LOGIC ] ---------------------------------------------------------------
 
 --- Helper to get zone for a widget's previous position
 local function GetPreviousZone(widget)
@@ -158,11 +190,6 @@ local function GetPreviousZone(widget)
     else
         return statusDock and statusDock.widgetZones and statusDock.widgetZones[widget.dockedSlot]
     end
-end
-
---- Get widget object by ID
-function WidgetManager:GetWidget(widgetId)
-    return widgets[widgetId]
 end
 
 --- Update all widgets with new settings
@@ -200,16 +227,16 @@ function WidgetManager:DockWidget(widgetId, zone)
     local previousZone = GetPreviousZone(widget)
     local existingWidgetId = zone.dockedWidget
     
-    -- If there's a widget already in the target zone, swap them
+    -- Two adventurers can’t occupy the same tavern seat; one has to move
     if existingWidgetId and existingWidgetId ~= widgetId then
         local existingWidget = widgets[existingWidgetId]
         
         if previousZone and existingWidget then
-            -- Swap: move existing widget to where dragged widget came from
+            -- Musical chairs: the displaced widget takes the old seat
             zone.dockedWidget = nil
             previousZone.dockedWidget = nil
             
-            -- Move existing widget to previous slot
+
             existingWidget.isDocked = true
             existingWidget.dockedSlot = previousZone.zoneIndex
             existingWidget.isInDrawer = previousZone.isDrawerZone or false
@@ -298,21 +325,43 @@ function WidgetManager:MoveToDrawer(widgetId)
         end
     end
     
-    -- No drawer slots available - widget will be hidden
+    -- All slots full — summon more drawer space from the arcane vault
+    if addon.GrowDrawer then
+        addon.GrowDrawer(#widgetOrder)
+        local expandedZones = addon.GetDrawerZones and addon.GetDrawerZones()
+        if expandedZones then
+            for i2, zone2 in ipairs(expandedZones) do
+                if not zone2.dockedWidget then
+                    widget.isDocked = true
+                    widget.dockedSlot = zone2.zoneIndex
+                    widget.isInDrawer = true
+                    zone2.dockedWidget = widgetId
+                    local wf = widget.frame
+                    if wf then
+                        wf:SetParent(zone2)
+                        wf:SetFrameStrata("DIALOG")
+                        wf:ClearAllPoints()
+                        wf:SetPoint("CENTER", zone2, "CENTER", 0, 0)
+                        if widget.onDock then widget.onDock(wf, zone2) end
+                    end
+                    self:SaveToSavedVars()
+                    return true
+                end
+            end
+        end
+    end
+
     widget.isDocked = false
     widget.dockedSlot = nil
     widget.isInDrawer = false
-    if widget.frame then
-        widget.frame:Hide()
-    end
-    
+    if widget.frame then widget.frame:Hide() end
     self:SaveToSavedVars()
     return false
 end
 
--- [ DRAG HANDLING ] -----------------------------------------------------------
+-- [ DRAG HANDLING ] ---------------------------------------------------------------
 
-local dragStartZone = nil  -- Track where widget started drag from
+local dragStartZone = nil
 
 --- Check if dragging is allowed (drawer must be open)
 function WidgetManager:CanDrag()
@@ -364,13 +413,13 @@ function WidgetManager:OnWidgetDragUpdate()
     -- Clear previous highlight
     if highlightedZone and highlightedZone ~= zone then
         highlightedZone.highlight:Hide()
-        highlightedZone.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.5)
+        highlightedZone.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
     end
     
     -- Set new highlight
     if zone then
         zone.highlight:Show()
-        zone.border:SetBackdropBorderColor(0.0, 0.8, 1.0, 1.0)
+        zone.border:SetBackdropBorderColor(HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B, HIGHLIGHT_A)
         highlightedZone = zone
     else
         highlightedZone = nil
@@ -400,7 +449,7 @@ function WidgetManager:OnWidgetDragStop(widgetId)
             if z then
                 z.highlight:Hide()
                 z.border:Hide()
-                z.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.5)
+                z.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
             end
         end
     end
@@ -412,7 +461,7 @@ function WidgetManager:OnWidgetDragStop(widgetId)
             if z then
                 z.highlight:Hide()
                 z.border:Hide()
-                z.border:SetBackdropBorderColor(0.4, 0.4, 0.4, 0.5)
+                z.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
             end
         end
     end
@@ -422,7 +471,7 @@ function WidgetManager:OnWidgetDragStop(widgetId)
     dragStartZone = nil
 end
 
--- [ PERSISTENCE ] -------------------------------------------------------------
+-- [ PERSISTENCE ] -----------------------------------------------------------------
 
 --- Save widget dock states to global saved variables
 function WidgetManager:SaveToSavedVars()
@@ -462,7 +511,7 @@ function WidgetManager:LoadFromSavedVars()
                 zone = statusDock and statusDock.widgetZones and statusDock.widgetZones[savedWidget.dockedSlot]
             end
             
-            if zone and zone:IsShown() then
+            if zone and zone:IsShown() and not zone.dockedWidget then
                 widget.isDocked = true
                 widget.dockedSlot = savedWidget.dockedSlot
                 widget.isInDrawer = savedWidget.isInDrawer
@@ -507,8 +556,41 @@ end
 
 --- Initialize persistence (called after dock and widgets are ready)
 function WidgetManager:InitPersistence()
-    -- Give a small delay for all widgets to register
-    C_Timer.After(0.3, function()
-        self:LoadFromSavedVars()
-    end)
+    C_Timer.After(PERSISTENCE_DELAY_SEC, function() self:LoadFromSavedVars() end)
+end
+
+-- [ UPDATE SCHEDULER ] ------------------------------------------------------------
+
+function WidgetManager:RegisterForScheduler(widgetId, tier, callback)
+    if not UPDATE_INTERVALS[tier] then return end
+    if not schedulerCallbacks[tier] then schedulerCallbacks[tier] = {} end
+    schedulerCallbacks[tier][widgetId] = callback
+    if not schedulerTickers[tier] then
+        schedulerTickers[tier] = C_Timer.NewTicker(UPDATE_INTERVALS[tier], function()
+            for _, cb in pairs(schedulerCallbacks[tier]) do cb() end
+        end)
+    end
+end
+
+function WidgetManager:UnregisterFromScheduler(widgetId, tier)
+    if not schedulerCallbacks[tier] then return end
+    schedulerCallbacks[tier][widgetId] = nil
+    if not next(schedulerCallbacks[tier]) and schedulerTickers[tier] then
+        schedulerTickers[tier]:Cancel()
+        schedulerTickers[tier] = nil
+    end
+end
+
+function WidgetManager:GetWidgetsByCategory()
+    local categorized = {}
+    for _, cat in pairs(WIDGET_CATEGORIES) do categorized[cat] = {} end
+    for id, widget in pairs(widgets) do
+        local catKey = widget.category or "UTILITY"
+        local catDef = WIDGET_CATEGORIES[catKey]
+        if catDef then
+            if not categorized[catDef] then categorized[catDef] = {} end
+            table.insert(categorized[catDef], widget)
+        end
+    end
+    return categorized
 end
