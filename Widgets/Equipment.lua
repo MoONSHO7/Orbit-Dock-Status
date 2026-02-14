@@ -10,48 +10,66 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local EquipmentWidget = addon.BaseWidget:New("Equipment"); addon.EquipmentWidget.category = "Character"
+local EquipmentWidget = addon.BaseWidget:New("Equipment")
 addon.EquipmentWidget = EquipmentWidget
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function EquipmentWidget:GetCurrentSet()
-    local setID = C_EquipmentSet.GetEquipmentSetAssignedToPlayer()
-    if setID then
-        local name, icon, setID, isEquipped, numItems, numEquipped = C_EquipmentSet.GetEquipmentSetInfo(setID)
-        return name, icon, numEquipped, numItems, setID
+    local setIDs = C_EquipmentSet.GetEquipmentSetIDs()
+    for _, setID in ipairs(setIDs) do
+        local name, icon, _, isEquipped, numItems, numEquipped = C_EquipmentSet.GetEquipmentSetInfo(setID)
+        if isEquipped then return name, icon, numEquipped, numItems, setID end
     end
     return "No Set", nil, 0, 0, nil
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function EquipmentWidget:Update()
     local name, icon, equipped, total = self:GetCurrentSet()
-    local text = name
-    if icon then text = string.format("|T%s:14|t %s", icon, name) end
-
-    self:SetFormattedText(nil, text)
+    if icon then
+        self:SetText(string.format("|T%s:14|t %s", icon, name))
+    else
+        self:SetText(name)
+    end
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
-function EquipmentWidget:GenerateMenu(owner, rootDescription)
+function EquipmentWidget:OpenMenu()
+    if not addon.Menu then return end
+
+    local items = {}
     local setIDs = C_EquipmentSet.GetEquipmentSetIDs()
-    local currentSetID = C_EquipmentSet.GetEquipmentSetAssignedToPlayer()
+    local _, _, _, _, currentSetID = self:GetCurrentSet()
 
-    if #setIDs == 0 then
-        rootDescription:CreateTitle("No Equipment Sets")
-    else
-        for _, id in ipairs(setIDs) do
-            local name, icon = C_EquipmentSet.GetEquipmentSetInfo(id)
-            rootDescription:CreateRadio(string.format("|T%s:14|t %s", icon, name), function() return id == currentSetID end, function()
-                if not InCombatLockdown() then C_EquipmentSet.UseEquipmentSet(id) end
-            end)
-        end
+    for _, id in ipairs(setIDs) do
+        local name, icon = C_EquipmentSet.GetEquipmentSetInfo(id)
+        table.insert(items, {
+            text = string.format("|T%s:14|t %s", icon, name),
+            checked = (id == currentSetID),
+            func = function()
+                if not InCombatLockdown() then
+                    C_EquipmentSet.UseEquipmentSet(id)
+                else
+                    print("|cffff0000Cannot change equipment in combat|r")
+                end
+            end
+        })
     end
 
-    rootDescription:CreateButton("Open Manager", function() ToggleCharacter("PaperDollFrame") end)
+    if #items == 0 then
+        table.insert(items, { text = "No Equipment Sets Found", func = nil })
+    end
+
+    addon.Menu:Open(self.frame, items)
 end
 
 function EquipmentWidget:ShowTooltip()
@@ -67,28 +85,34 @@ function EquipmentWidget:ShowTooltip()
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Left Click", "Open Manager", 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Right Click", "Switch Set", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Left Click", "Switch Set", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Shift+Click", "Character Info", 0.7, 0.7, 0.7, 1, 1, 1)
+
     GameTooltip:Show()
 end
 
 function EquipmentWidget:OnClick(button)
-    ToggleCharacter("PaperDollFrame")
+    if IsShiftKeyDown() then
+        ToggleCharacter("PaperDollFrame")
+    else
+        self:OpenMenu()
+    end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function EquipmentWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
-
     self:RegisterEvent("EQUIPMENT_SETS_CHANGED")
     self:RegisterEvent("PLAYER_EQUIPMENT_CHANGED")
+
+    self:SetCategory("CHARACTER")
+
 
     self:Register()
     self:Update()
@@ -96,6 +120,7 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() EquipmentWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() EquipmentWidget:OnLoad() end)
 end)

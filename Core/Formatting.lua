@@ -11,7 +11,7 @@ if not Orbit then return end
 local Formatting = {}
 addon.Formatting = Formatting
 
--- [ NUMBERS ] -----------------------------------------------------------------
+-- [ NUMBERS ] ---------------------------------------------------------------------
 
 function Formatting:FormatNumber(num)
     if not num then return "0" end
@@ -44,7 +44,7 @@ function Formatting:FormatMoney(copper, full)
     end
 end
 
--- [ TIME ] --------------------------------------------------------------------
+-- [ TIME ] ------------------------------------------------------------------------
 
 function Formatting:FormatTime(seconds)
     if not seconds or seconds == math.huge then return "N/A" end
@@ -60,17 +60,67 @@ function Formatting:FormatTimeShort(seconds)
     return string.format("%d:%02d:%02d", seconds / 3600, (seconds % 3600) / 60, seconds % 60)
 end
 
--- [ COLORS ] ------------------------------------------------------------------
+-- [ COLORS ] ----------------------------------------------------------------------
 
 function Formatting:GetColor(value, max, inverse)
     local pct = (value / max) * 100
     if inverse then
-        if pct < 50 then return "|cff00ff00" end -- Green
-        if pct < 80 then return "|cffffa500" end -- Orange
-        return "|cffff0000" -- Red
+        if pct < 50 then return "|cff00ff00" end
+        if pct < 80 then return "|cffffa500" end
+        return "|cffff0000"
     else
-        if pct < 20 then return "|cffff0000" end -- Red
-        if pct < 50 then return "|cffffa500" end -- Orange
-        return "|cff00ff00" -- Green
+        if pct < 20 then return "|cffff0000" end
+        if pct < 50 then return "|cffffa500" end
+        return "|cff00ff00"
     end
 end
+
+-- [ RING BUFFER ] -----------------------------------------------------------------
+
+local RingBuffer = {}
+RingBuffer.__index = RingBuffer
+
+function RingBuffer:New(capacity)
+    return setmetatable({ data = {}, capacity = capacity, head = 0, count = 0 }, RingBuffer)
+end
+
+function RingBuffer:Push(value)
+    self.head = (self.head % self.capacity) + 1
+    self.data[self.head] = value
+    if self.count < self.capacity then self.count = self.count + 1 end
+end
+
+function RingBuffer:Clear()
+    self.head = 0
+    self.count = 0
+end
+
+function RingBuffer:Iterate()
+    local i = 0
+    local start = (self.head - self.count) % self.capacity
+    return function()
+        i = i + 1
+        if i > self.count then return nil end
+        local idx = (start + i - 1) % self.capacity + 1
+        return i, self.data[idx]
+    end
+end
+
+function RingBuffer:Last(offset)
+    offset = offset or 0
+    if offset >= self.count then return nil end
+    local idx = (self.head - 1 - offset) % self.capacity + 1
+    return self.data[idx]
+end
+
+function RingBuffer:Nth(n)
+    if n < 1 or n > self.count then return nil end
+    local start = (self.head - self.count) % self.capacity
+    local idx = (start + n - 1) % self.capacity + 1
+    return self.data[idx]
+end
+
+function RingBuffer:Count() return self.count end
+
+Formatting.RingBuffer = RingBuffer
+

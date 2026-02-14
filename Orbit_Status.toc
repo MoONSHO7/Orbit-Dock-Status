@@ -26,6 +26,7 @@ Core\StatusDock.lua
 
 # Widgets
 Widgets\BaseWidget.lua
+Widgets\Menu.lua
 Widgets\WidgetManager.lua
 Widgets\Volume.lua
 Widgets\Performance.lua
@@ -54,4 +55,20 @@ Widgets\Reputation.lua
 Widgets\Experience.lua
 Widgets\Missions.lua
 Widgets\Mounts.lua
-Widgets\Weekly.lua
+Widgets\MythicPlus.lua
+Widgets\GreatVault.lua
+Widgets\ResetTimers.lua
+Widgets\Talents.lua
+Widgets\Hearthstone.lua
+Widgets\ProfessionCooldowns.lua
+Widgets\Calendar.lua
+Widgets\Achievements.lua
+Widgets\Collections.lua
+Widgets\PvPProgress.lua
+Widgets\Delves.lua
+Widgets\QueueStatus.lua
+Widgets\WeatherAndTime.lua
+Widgets\Mail.lua
+Widgets\FactionPower.lua
+Widgets\Fishing.lua
+Widgets\Keystroke.lua

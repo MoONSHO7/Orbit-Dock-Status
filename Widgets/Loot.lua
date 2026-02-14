@@ -10,64 +10,97 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local LootWidget = addon.BaseWidget:New("Loot"); addon.LootWidget.category = "System"
+local LootWidget = addon.BaseWidget:New("Loot")
 addon.LootWidget = LootWidget
 
--- [ SETTINGS ] ----------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+local ITEM_CLEAR_SEC = 10
+
+-- [ SETTINGS ] --------------------------------------------------------------------
 
 LootWidget.settings = {
     autoLoot = true,
     speedLoot = true,
 }
 
+-- [ STATE ] -----------------------------------------------------------------------
+
 LootWidget.lastItem = nil
 LootWidget.lastItemTime = 0
 
--- [ SPEED LOOT ] --------------------------------------------------------------
+-- [ SPEED LOOT ] ------------------------------------------------------------------
 
 function LootWidget:HandleLoot()
     if not self.settings.speedLoot then return end
+
     local numItems = GetNumLootItems()
     if numItems > 0 then
-        for i = numItems, 1, -1 do LootSlot(i) end
+        -- The rogue grabs everything before the party can roll
+        for i = numItems, 1, -1 do
+            LootSlot(i)
+        end
     end
 end
 
--- [ UPDATES ] -----------------------------------------------------------------
+-- [ UPDATES ] ---------------------------------------------------------------------
 
 function LootWidget:Update()
-    local text = self.settings.autoLoot and "|cff00ff00Auto|r" or "|cff888888Manual|r"
+    local text = "Loot: "
+    if self.settings.autoLoot then
+        text = text .. "|cff00ff00Auto|r"
+    else
+        text = text .. "|cff888888Manual|r"
+    end
+
     if self.lastItem then
         text = text .. " " .. self.lastItem
     end
-    self:SetFormattedText("Loot:", text)
+
+    self:SetText(text)
 end
 
-function LootWidget:OnLootReceived(itemLink)
+function LootWidget:OnLootReceived(itemLink, quantity)
     self.lastItem = itemLink
     self.lastItemTime = GetTime()
     self:Update()
 
-    C_Timer.After(10, function()
-        if GetTime() - self.lastItemTime >= 10 then
+    C_Timer.After(ITEM_CLEAR_SEC, function()
+        if GetTime() - self.lastItemTime >= ITEM_CLEAR_SEC then
             self.lastItem = nil
             self:Update()
         end
     end)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
-function LootWidget:GenerateMenu(owner, rootDescription)
-    rootDescription:CreateCheckbox("Auto Loot", function() return self.settings.autoLoot end, function()
-        self.settings.autoLoot = not self.settings.autoLoot
-        SetCVar("autoLootDefault", self.settings.autoLoot and "1" or "0")
-        self:Update()
-    end)
+function LootWidget:OpenMenu()
+    if not addon.Menu then return end
 
-    rootDescription:CreateCheckbox("Speed Loot", function() return self.settings.speedLoot end, function()
-        self.settings.speedLoot = not self.settings.speedLoot
-    end)
+    local items = {
+        {
+            text = "Auto Loot",
+            checked = self.settings.autoLoot,
+            func = function()
+                self.settings.autoLoot = not self.settings.autoLoot
+                SetCVar("autoLootDefault", self.settings.autoLoot and "1" or "0")
+                self:Update()
+            end,
+            closeOnClick = false,
+        },
+        {
+            text = "Speed Loot",
+            checked = self.settings.speedLoot,
+            func = function() self.settings.speedLoot = not self.settings.speedLoot end,
+            closeOnClick = false,
+        },
+    }
+
+    addon.Menu:Open(self.frame, items)
 end
 
 function LootWidget:ShowTooltip()
@@ -92,32 +125,35 @@ function LootWidget:ShowTooltip()
 end
 
 function LootWidget:OnClick(button)
-    -- Left click?
+    if button == "RightButton" then
+        self:OpenMenu()
+    end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function LootWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
+
+    -- The dungeon master consults the CVar scroll of truth
     self.settings.autoLoot = GetCVar("autoLootDefault") == "1"
+
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
-
     self:RegisterEvent("LOOT_READY", function() self:HandleLoot() end)
-    self:RegisterEvent("CHAT_MSG_LOOT", function(_, msg)
-        -- Placeholder item parsing
-    end)
 
+    self:SetCategory("GAMEPLAY")
     self:Register()
     self:Update()
 end
 
+
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() LootWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() LootWidget:OnLoad() end)
 end)

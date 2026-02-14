@@ -10,10 +10,16 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local MountsWidget = addon.BaseWidget:New("Mounts"); addon.MountsWidget.category = "World"
+local MountsWidget = addon.BaseWidget:New("Mounts")
 addon.MountsWidget = MountsWidget
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 100
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 function MountsWidget:GetCollectionStats()
     local numMounts = C_MountJournal.GetNumMounts()
@@ -31,7 +37,7 @@ function MountsWidget:GetCollectionStats()
     return owned, numMounts
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function MountsWidget:Update()
     local owned, total = self:GetCollectionStats()
@@ -39,7 +45,7 @@ function MountsWidget:Update()
     self:SetText(string.format("Mounts: %d", owned))
 end
 
--- [ SMART SUMMON ] ------------------------------------------------------------
+-- [ SMART SUMMON ] ----------------------------------------------------------------
 
 function MountsWidget:SmartSummon()
     if InCombatLockdown() then return end
@@ -53,7 +59,7 @@ function MountsWidget:SmartSummon()
     C_MountJournal.SummonByID(0)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function MountsWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -80,10 +86,10 @@ function MountsWidget:OnClick(button)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function MountsWidget:OnLoad()
-    self:CreateFrame(100, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
@@ -92,12 +98,16 @@ function MountsWidget:OnLoad()
     self:RegisterEvent("NEW_MOUNT_ADDED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
 
+    self:SetCategory("WORLD")
+
+
     self:Register()
     self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() MountsWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() MountsWidget:OnLoad() end)
 end)

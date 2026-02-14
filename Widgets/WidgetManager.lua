@@ -1,6 +1,5 @@
 -- WidgetManager.lua
 -- Central registry and management for StatusDock widgets
--- Features: Dynamic Grid Drawer, Drag & Drop Ghosting, Categorization
 
 local _, addon = ...
 
@@ -11,337 +10,587 @@ if not Orbit then return end
 local WidgetManager = {}
 addon.WidgetManager = WidgetManager
 
--- [ STATE ] -------------------------------------------------------------------
+-- [ CONSTANTS ] -------------------------------------------------------------------
+
+local PERSISTENCE_DELAY_SEC = 0.3
+local ZONE_BORDER_R = 0.4
+local ZONE_BORDER_G = 0.4
+local ZONE_BORDER_B = 0.4
+local ZONE_BORDER_A = 0.5
+local HIGHLIGHT_R = 0.0
+local HIGHLIGHT_G = 0.8
+local HIGHLIGHT_B = 1.0
+local HIGHLIGHT_A = 1.0
+
+local WIDGET_CATEGORIES = {
+    SYSTEM    = { order = 1, label = "System" },
+    CHARACTER = { order = 2, label = "Character" },
+    SOCIAL    = { order = 3, label = "Social" },
+    GAMEPLAY  = { order = 4, label = "Gameplay" },
+    WORLD     = { order = 5, label = "World" },
+    UTILITY   = { order = 6, label = "Utility" },
+}
+addon.WIDGET_CATEGORIES = WIDGET_CATEGORIES
+
+local UPDATE_INTERVALS = {
+    FAST    = 0.5,
+    NORMAL  = 1.0,
+    SLOW    = 5.0,
+    GLACIAL = 60.0,
+}
+addon.UPDATE_INTERVALS = UPDATE_INTERVALS
+
+-- [ STATE ] -----------------------------------------------------------------------
 
 local widgets = {}
-local dockFrame = nil
-local drawerFrame = nil
+local widgetOrder = {}
+local statusDock = nil
 local draggedWidget = nil
-local ghostFrame = nil
+local highlightedZone = nil
+local dragStartZone = nil
+local schedulerTickers = {}
+local schedulerCallbacks = {}
 
-local CATEGORIES = {
-    "Character", "Combat", "Economy", "World", "System", "Social", "Other"
-}
+-- [ REGISTRATION ] ----------------------------------------------------------------
 
--- [ REGISTRATION ] ------------------------------------------------------------
-
+--- Create and register a new widget using BaseWidget
+---@param name string Widget name
+---@return table The new widget instance
 function WidgetManager:CreateWidget(name)
     if not addon.BaseWidget then return nil end
-    return addon.BaseWidget:New(name)
+    local widget = addon.BaseWidget:New(name)
+    return widget
 end
 
+--- Register a widget with the manager
+---@param id string Unique widget identifier
+---@param widgetData table Widget data: { frame, name, onDock, onUndock, onEnable, onDisable }
 function WidgetManager:Register(id, widgetData)
     if widgets[id] then return end
-    
     widgets[id] = {
         id = id,
         name = widgetData.name or id,
-        category = widgetData.category or "Other",
         frame = widgetData.frame,
-        -- Callbacks
+        category = widgetData.category or "UTILITY",
         onDock = widgetData.onDock,
         onUndock = widgetData.onUndock,
         onEnable = widgetData.onEnable,
         onDisable = widgetData.onDisable,
-        -- State
         isDocked = false,
         dockedSlot = nil,
+        isEnabled = true,
     }
+    table.insert(widgetOrder, id)
+end
+
+function WidgetManager:GetWidgetCount() return #widgetOrder end
+
+--- Enable a widget (start tickers, register events)
+---@param id string Widget ID
+function WidgetManager:EnableWidget(id)
+    local widget = widgets[id]
+    if not widget or widget.isEnabled then return end
     
-    -- Refresh Drawer if open
-    if self:IsDrawerOpen() then self:RefreshDrawer() end
-end
-
-function WidgetManager:SetDock(dock)
-    dockFrame = dock
-end
-
-function WidgetManager:GetWidget(id) return widgets[id] end
-function WidgetManager:GetAllWidgets() return widgets end
-
--- [ DRAWER LAYOUT ] -----------------------------------------------------------
-
-function WidgetManager:GetDrawer()
-    if drawerFrame then return drawerFrame end
-
-    local f = CreateFrame("Frame", "OrbitStatusDrawer", UIParent, "BackdropTemplate")
-    f:SetFrameStrata("DIALOG")
-    f:SetSize(600, 400)
-    f:SetPoint("CENTER")
-    f:SetClampedToScreen(true)
-    f:EnableMouse(true)
-    f:Hide()
-
-    -- Styling (Modern Dark)
-    f:SetBackdrop({
-        bgFile = "Interface\\Buttons\\WHITE8x8",
-        edgeFile = "Interface\\Buttons\\WHITE8x8",
-        edgeSize = 1,
-    })
-    f:SetBackdropColor(0.1, 0.1, 0.1, 0.95)
-    f:SetBackdropBorderColor(0, 0, 0, 1)
-
-    -- Header
-    f.Title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightLarge")
-    f.Title:SetPoint("TOPLEFT", 15, -15)
-    f.Title:SetText("Widget Drawer")
-
-    f.Close = CreateFrame("Button", nil, f, "UIPanelCloseButton")
-    f.Close:SetPoint("TOPRIGHT", -5, -5)
-
-    -- ScrollFrame
-    f.Scroll = CreateFrame("ScrollFrame", nil, f, "UIPanelScrollFrameTemplate")
-    f.Scroll:SetPoint("TOPLEFT", 20, -50)
-    f.Scroll:SetPoint("BOTTOMRIGHT", -40, 20)
-
-    f.Content = CreateFrame("Frame", nil, f.Scroll)
-    f.Content:SetSize(540, 1) -- Height dynamic
-    f.Scroll:SetScrollChild(f.Content)
-
-    drawerFrame = f
-    return f
-end
-
-function WidgetManager:RefreshDrawer()
-    local drawer = self:GetDrawer()
-    local content = drawer.Content
-
-    -- Clear current children (hide them)
-    for _, child in ipairs({content:GetChildren()}) do
-        child:Hide()
+    widget.isEnabled = true
+    if widget.onEnable then
+        widget.onEnable(widget.frame)
     end
+end
 
-    local yOffset = 0
-    local padding = 10
-    local slotWidth = 120
-    local slotHeight = 30
-    local cols = 4
+--- Disable a widget (stop tickers, unregister events)
+---@param id string Widget ID
+function WidgetManager:DisableWidget(id)
+    local widget = widgets[id]
+    if not widget or not widget.isEnabled then return end
+    
+    widget.isEnabled = false
+    if widget.onDisable then
+        widget.onDisable(widget.frame)
+    end
+end
 
-    -- Group by Category
-    local byCat = {}
-    for _, cat in ipairs(CATEGORIES) do byCat[cat] = {} end
-
-    for id, w in pairs(widgets) do
-        if not w.isDocked then
-            local cat = w.category
-            if not byCat[cat] then cat = "Other" end
-            table.insert(byCat[cat], w)
+--- Enable all widgets currently in the drawer
+function WidgetManager:EnableDrawerWidgets()
+    for id, widget in pairs(widgets) do
+        if widget.isInDrawer then
+            self:EnableWidget(id)
         end
     end
+end
+
+--- Disable all widgets currently in the drawer
+function WidgetManager:DisableDrawerWidgets()
+    for id, widget in pairs(widgets) do
+        if widget.isInDrawer then
+            self:DisableWidget(id)
+        end
+    end
+end
+
+--- Get widget by ID
+function WidgetManager:GetWidget(id)
+    return widgets[id]
+end
+
+--- Get all registered widgets
+function WidgetManager:GetAllWidgets()
+    return widgets
+end
+
+-- [ DOCK INTEGRATION ] ------------------------------------------------------------
+
+--- Set the status dock reference
+function WidgetManager:SetDock(dock)
+    statusDock = dock
+end
+
+--- Get zone at cursor position (checks both dock and drawer zones)
+function WidgetManager:GetZoneAtCursor()
+    local x, y = GetCursorPosition()
+    local scale = UIParent:GetEffectiveScale()
+    x, y = x / scale, y / scale
     
-    -- Render
-    for _, cat in ipairs(CATEGORIES) do
-        local list = byCat[cat]
-        if list and #list > 0 then
-            -- Header
-            local header = content:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-            header:SetPoint("TOPLEFT", 0, -yOffset)
-            header:SetText(cat)
-            header:Show()
-            yOffset = yOffset + 20
-
-            -- Grid
-            for i, w in ipairs(list) do
-                local col = (i - 1) % cols
-                local row = math.floor((i - 1) / cols)
-
-                -- Reparent widget frame to drawer content
-                if w.frame then
-                    w.frame:SetParent(content)
-                    w.frame:ClearAllPoints()
-                    w.frame:SetPoint("TOPLEFT", col * (slotWidth + padding), -yOffset - (row * (slotHeight + padding)))
-                    w.frame:SetSize(slotWidth, slotHeight)
-                    w.frame:Show()
-
-                    -- Reset to "Drawer Mode" look?
-                    if w.onUndock then w.onUndock(w.frame) end
+    -- Check dock zones first
+    if statusDock and statusDock.widgetZones then
+        for i, zone in ipairs(statusDock.widgetZones) do
+            if zone and zone:IsShown() then
+                local left, bottom, width, height = zone:GetRect()
+                if left and x >= left and x <= left + width and y >= bottom and y <= bottom + height then
+                    return zone
                 end
             end
-
-            local rows = math.ceil(#list / cols)
-            yOffset = yOffset + (rows * (slotHeight + padding)) + 10
         end
     end
     
-    content:SetHeight(yOffset)
+    -- Check drawer zones
+    local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+    if drawerZones then
+        for i, zone in ipairs(drawerZones) do
+            if zone and zone:IsShown() then
+                local left, bottom, width, height = zone:GetRect()
+                if left and x >= left and x <= left + width and y >= bottom and y <= bottom + height then
+                    return zone
+                end
+            end
+        end
+    end
+    
+    return nil
 end
 
-function WidgetManager:ToggleDrawer()
-    local drawer = self:GetDrawer()
-    if drawer:IsShown() then
-        drawer:Hide()
+-- [ DOCKING LOGIC ] ---------------------------------------------------------------
+
+--- Helper to get zone for a widget's previous position
+local function GetPreviousZone(widget)
+    if not widget.isDocked then return nil end
+    
+    if widget.isInDrawer then
+        local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+        return drawerZones and drawerZones[widget.dockedSlot]
     else
-        self:RefreshDrawer()
-        drawer:Show()
+        return statusDock and statusDock.widgetZones and statusDock.widgetZones[widget.dockedSlot]
     end
 end
 
-function WidgetManager:IsDrawerOpen()
-    return drawerFrame and drawerFrame:IsShown()
+--- Update all widgets with new settings
+---@param textSize number Text size for widget font
+function WidgetManager:UpdateAllWidgets(textSize)
+    local Orbit = Orbit
+    local font = Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.Font
+    
+    for id, widget in pairs(widgets) do
+        local f = widget.frame
+        if f and f.Text then
+            if Orbit.Skin then
+                Orbit.Skin:SkinText(f.Text, { font = font, textSize = textSize })
+            else
+                f.Text:SetTextHeight(textSize)
+            end
+            
+            -- Trigger widget update to refresh layout if needed
+            if f:IsVisible() and widget.frame.onUndock then
+                -- Re-run update logic (most widgets use onUndock for general refresh)
+                -- Or check if there's a specific Update method?
+                -- Most widgets just loop. Resizing text might require container resize if not docked.
+            end
+        end
+    end
 end
 
--- [ DRAG AND DROP ] -----------------------------------------------------------
+--- Dock a widget into a specific zone (dock or drawer)
+---@param widgetId string Widget ID
+---@param zone table Zone frame
+function WidgetManager:DockWidget(widgetId, zone)
+    local widget = widgets[widgetId]
+    if not widget or not zone then return false end
+    
+    local previousZone = GetPreviousZone(widget)
+    local existingWidgetId = zone.dockedWidget
+    
+    -- Two adventurers can’t occupy the same tavern seat; one has to move
+    if existingWidgetId and existingWidgetId ~= widgetId then
+        local existingWidget = widgets[existingWidgetId]
+        
+        if previousZone and existingWidget then
+            -- Musical chairs: the displaced widget takes the old seat
+            zone.dockedWidget = nil
+            previousZone.dockedWidget = nil
+            
 
-function WidgetManager:CreateGhost()
-    if ghostFrame then return ghostFrame end
-    local f = CreateFrame("Frame", nil, UIParent)
-    f:SetSize(100, 25)
-    f:SetFrameStrata("TOOLTIP")
-    f.bg = f:CreateTexture(nil, "BACKGROUND")
-    f.bg:SetAllPoints()
-    f.bg:SetColorTexture(0, 0.8, 1, 0.5) -- Cyan
-    f.text = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    f.text:SetPoint("CENTER")
-    f:Hide()
-    ghostFrame = f
-    return f
+            existingWidget.isDocked = true
+            existingWidget.dockedSlot = previousZone.zoneIndex
+            existingWidget.isInDrawer = previousZone.isDrawerZone or false
+            previousZone.dockedWidget = existingWidgetId
+            
+            local existingFrame = existingWidget.frame
+            if existingFrame then
+                existingFrame:SetParent(previousZone)
+                existingFrame:SetFrameStrata(previousZone.isDrawerZone and "DIALOG" or "BACKGROUND")
+                existingFrame:ClearAllPoints()
+                existingFrame:SetPoint("CENTER", previousZone, "CENTER", 0, 0)
+                if existingWidget.onDock then
+                    existingWidget.onDock(existingFrame, previousZone)
+                end
+            end
+        else
+            -- No previous slot, move existing widget to first available drawer slot
+            self:MoveToDrawer(existingWidgetId)
+        end
+    elseif previousZone then
+        -- Clear reference from previous zone
+        previousZone.dockedWidget = nil
+    end
+    
+    -- Dock the widget
+    widget.isDocked = true
+    widget.dockedSlot = zone.zoneIndex
+    widget.isInDrawer = zone.isDrawerZone or false
+    zone.dockedWidget = widgetId
+    
+    -- Re-parent and position the widget frame
+    local widgetFrame = widget.frame
+    if widgetFrame then
+        widgetFrame:SetParent(zone)
+        widgetFrame:SetFrameStrata(zone.isDrawerZone and "DIALOG" or "BACKGROUND")
+        widgetFrame:ClearAllPoints()
+        widgetFrame:SetPoint("CENTER", zone, "CENTER", 0, 0)
+        
+        if widget.onDock then
+            widget.onDock(widgetFrame, zone)
+        end
+    end
+    
+    -- Save state after docking
+    self:SaveToSavedVars()
+    
+    return true
 end
 
-function WidgetManager:OnWidgetDragStart(id)
-    local w = widgets[id]
-    if not w then return end
+--- Move a widget to the first available drawer slot
+---@param widgetId string Widget ID
+function WidgetManager:MoveToDrawer(widgetId)
+    local widget = widgets[widgetId]
+    if not widget then return false end
     
-    draggedWidget = w
+    -- Clear previous zone reference
+    local previousZone = GetPreviousZone(widget)
+    if previousZone then
+        previousZone.dockedWidget = nil
+    end
     
-    -- Show Ghost
-    local ghost = self:CreateGhost()
-    ghost.text:SetText(w.name)
-    ghost:SetSize(w.frame:GetWidth(), w.frame:GetHeight())
-    ghost:Show()
+    -- Find first available drawer slot
+    local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+    if not drawerZones then return false end
+    
+    for i, zone in ipairs(drawerZones) do
+        if not zone.dockedWidget then
+            widget.isDocked = true
+            widget.dockedSlot = zone.zoneIndex
+            widget.isInDrawer = true
+            zone.dockedWidget = widgetId
+            
+            local widgetFrame = widget.frame
+            if widgetFrame then
+                widgetFrame:SetParent(zone)
+                widgetFrame:SetFrameStrata("DIALOG")
+                widgetFrame:ClearAllPoints()
+                widgetFrame:SetPoint("CENTER", zone, "CENTER", 0, 0)
+                if widget.onDock then
+                    widget.onDock(widgetFrame, zone)
+                end
+            end
+            
+            self:SaveToSavedVars()
+            return true
+        end
+    end
+    
+    -- All slots full — summon more drawer space from the arcane vault
+    if addon.GrowDrawer then
+        addon.GrowDrawer(#widgetOrder)
+        local expandedZones = addon.GetDrawerZones and addon.GetDrawerZones()
+        if expandedZones then
+            for i2, zone2 in ipairs(expandedZones) do
+                if not zone2.dockedWidget then
+                    widget.isDocked = true
+                    widget.dockedSlot = zone2.zoneIndex
+                    widget.isInDrawer = true
+                    zone2.dockedWidget = widgetId
+                    local wf = widget.frame
+                    if wf then
+                        wf:SetParent(zone2)
+                        wf:SetFrameStrata("DIALOG")
+                        wf:ClearAllPoints()
+                        wf:SetPoint("CENTER", zone2, "CENTER", 0, 0)
+                        if widget.onDock then widget.onDock(wf, zone2) end
+                    end
+                    self:SaveToSavedVars()
+                    return true
+                end
+            end
+        end
+    end
 
-    -- Start following mouse
-    ghost:SetScript("OnUpdate", function(self)
-        local x, y = GetCursorPosition()
-        local scale = UIParent:GetEffectiveScale()
-        self:SetPoint("BOTTOMLEFT", UIParent, "BOTTOMLEFT", (x / scale) + 10, (y / scale) - 10)
-    end)
+    widget.isDocked = false
+    widget.dockedSlot = nil
+    widget.isInDrawer = false
+    if widget.frame then widget.frame:Hide() end
+    self:SaveToSavedVars()
+    return false
+end
+
+-- [ DRAG HANDLING ] ---------------------------------------------------------------
+
+local dragStartZone = nil
+
+--- Check if dragging is allowed (drawer must be open)
+function WidgetManager:CanDrag()
+    return addon.IsDrawerOpen and addon.IsDrawerOpen()
+end
+
+--- Called when widget drag starts
+--- Returns true if drag is allowed, false if blocked
+function WidgetManager:OnWidgetDragStart(widgetId)
+    -- Only allow dragging when drawer is open
+    if not self:CanDrag() then
+        return false
+    end
     
-    -- Hide original frame mostly
-    w.frame:SetAlpha(0.3)
+    draggedWidget = widgetId
     
-    -- Show Dock Drop Targets
-    if dockFrame and dockFrame.ShowDropTargets then
-        dockFrame:ShowDropTargets(true)
+    -- Remember original position for snap-back
+    local widget = widgets[widgetId]
+    dragStartZone = widget and GetPreviousZone(widget)
+    
+    -- Show dock zone highlights
+    if statusDock and statusDock.widgetZones then
+        for _, zone in ipairs(statusDock.widgetZones) do
+            if zone and zone.border and zone:IsShown() then
+                zone.border:Show()
+            end
+        end
+    end
+    
+    -- Show drawer zone highlights
+    local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+    if drawerZones then
+        for _, zone in ipairs(drawerZones) do
+            if zone and zone.border then
+                zone.border:Show()
+            end
+        end
     end
     
     return true
 end
 
+--- Called during widget drag to update zone highlighting
 function WidgetManager:OnWidgetDragUpdate()
-    -- Ghost handles position in OnUpdate
-end
-
-function WidgetManager:OnWidgetDragStop(id)
     if not draggedWidget then return end
     
-    local ghost = self:CreateGhost()
-    ghost:Hide()
-    ghost:SetScript("OnUpdate", nil)
+    local zone = self:GetZoneAtCursor()
     
-    draggedWidget.frame:SetAlpha(1)
-    
-    if dockFrame and dockFrame.ShowDropTargets then
-        dockFrame:ShowDropTargets(false)
+    -- Clear previous highlight
+    if highlightedZone and highlightedZone ~= zone then
+        highlightedZone.highlight:Hide()
+        highlightedZone.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
     end
     
-    -- Check for Drop Target
-    local droppedZone = self:GetZoneAtCursor()
-
-    if droppedZone then
-        self:DockWidget(draggedWidget.id, droppedZone)
+    -- Set new highlight
+    if zone then
+        zone.highlight:Show()
+        zone.border:SetBackdropBorderColor(HIGHLIGHT_R, HIGHLIGHT_G, HIGHLIGHT_B, HIGHLIGHT_A)
+        highlightedZone = zone
     else
-        -- Dropped in void -> Undock/Return to Drawer
-        self:UndockWidget(draggedWidget.id)
+        highlightedZone = nil
     end
-    
-    draggedWidget = nil
-    self:RefreshDrawer()
 end
 
-function WidgetManager:GetZoneAtCursor()
-    if not dockFrame or not dockFrame.widgetZones then return nil end
-    local x, y = GetCursorPosition()
-    local scale = UIParent:GetEffectiveScale()
-    x, y = x / scale, y / scale
+--- Called when widget drag ends
+function WidgetManager:OnWidgetDragStop(widgetId)
+    if not draggedWidget then return end
     
-    for i, zone in ipairs(dockFrame.widgetZones) do
-        if zone:IsShown() then
-            local left, bottom, width, height = zone:GetRect()
-            if left and x >= left and x <= (left + width) and y >= bottom and y <= (bottom + height) then
-                return zone
+    local zone = self:GetZoneAtCursor()
+    
+    if zone then
+        -- Dropped on a zone - dock it
+        self:DockWidget(widgetId, zone)
+    elseif dragStartZone then
+        -- Dropped elsewhere - snap back to original position
+        self:DockWidget(widgetId, dragStartZone)
+    else
+        -- No original position - move to drawer
+        self:MoveToDrawer(widgetId)
+    end
+    
+    -- Hide ALL dock zone borders
+    if statusDock and statusDock.widgetZones then
+        for _, z in ipairs(statusDock.widgetZones) do
+            if z then
+                z.highlight:Hide()
+                z.border:Hide()
+                z.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
             end
         end
     end
-    return nil
-end
-
-function WidgetManager:DockWidget(id, zone)
-    local w = widgets[id]
-    if not w then return end
     
-    -- If zone occupied, swap
-    if zone.dockedWidget and zone.dockedWidget ~= id then
-        self:UndockWidget(zone.dockedWidget) -- For now, just kick existing back to drawer. Swap logic is complex.
+    -- Hide ALL drawer zone borders
+    local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+    if drawerZones then
+        for _, z in ipairs(drawerZones) do
+            if z then
+                z.highlight:Hide()
+                z.border:Hide()
+                z.border:SetBackdropBorderColor(ZONE_BORDER_R, ZONE_BORDER_G, ZONE_BORDER_B, ZONE_BORDER_A)
+            end
+        end
     end
     
-    -- Undock from previous if any
-    if w.isDocked and w.dockedSlot then
-        dockFrame.widgetZones[w.dockedSlot].dockedWidget = nil
-    end
-
-    w.isDocked = true
-    w.dockedSlot = zone.zoneIndex
-    zone.dockedWidget = id
-
-    w.frame:SetParent(zone)
-    w.frame:ClearAllPoints()
-    w.frame:SetPoint("CENTER")
-
-    if w.onDock then w.onDock(w.frame, zone) end
-
-    self:SaveState()
+    highlightedZone = nil
+    draggedWidget = nil
+    dragStartZone = nil
 end
 
-function WidgetManager:UndockWidget(id)
-    local w = widgets[id]
-    if not w then return end
-    
-    if w.isDocked and w.dockedSlot and dockFrame.widgetZones then
-        local zone = dockFrame.widgetZones[w.dockedSlot]
-        if zone then zone.dockedWidget = nil end
-    end
-    
-    w.isDocked = false
-    w.dockedSlot = nil
-    
-    if w.onUndock then w.onUndock(w.frame) end
-    
-    self:SaveState()
-end
+-- [ PERSISTENCE ] -----------------------------------------------------------------
 
--- [ PERSISTENCE ] -------------------------------------------------------------
-
-function WidgetManager:SaveState()
+--- Save widget dock states to global saved variables
+function WidgetManager:SaveToSavedVars()
     if not Orbit_StatusDB then Orbit_StatusDB = {} end
+    
     local state = {}
-    for id, w in pairs(widgets) do
-        if w.isDocked then
-            state[id] = w.dockedSlot
-        end
+    for id, widget in pairs(widgets) do
+        state[id] = {
+            isDocked = widget.isDocked,
+            dockedSlot = widget.dockedSlot,
+            isInDrawer = widget.isInDrawer,
+        }
     end
-    Orbit_StatusDB.layout = state
+    Orbit_StatusDB.widgetState = state
 end
 
-function WidgetManager:LoadState()
-    if not Orbit_StatusDB or not Orbit_StatusDB.layout then return end
-
-    for id, slot in pairs(Orbit_StatusDB.layout) do
-        if dockFrame and dockFrame.widgetZones and dockFrame.widgetZones[slot] then
-            self:DockWidget(id, dockFrame.widgetZones[slot])
+--- Load widget dock states from saved variables
+function WidgetManager:LoadFromSavedVars()
+    if not Orbit_StatusDB or not Orbit_StatusDB.widgetState then
+        -- No saved state - move all widgets to drawer
+        self:InitializeWidgetsToDrawer()
+        return
+    end
+    
+    local state = Orbit_StatusDB.widgetState
+    for id, savedWidget in pairs(state) do
+        local widget = widgets[id]
+        if widget and savedWidget.isDocked and savedWidget.dockedSlot then
+            local zone
+            
+            if savedWidget.isInDrawer then
+                -- Restore to drawer zone
+                local drawerZones = addon.GetDrawerZones and addon.GetDrawerZones()
+                zone = drawerZones and drawerZones[savedWidget.dockedSlot]
+            else
+                -- Restore to dock zone
+                zone = statusDock and statusDock.widgetZones and statusDock.widgetZones[savedWidget.dockedSlot]
+            end
+            
+            if zone and zone:IsShown() and not zone.dockedWidget then
+                widget.isDocked = true
+                widget.dockedSlot = savedWidget.dockedSlot
+                widget.isInDrawer = savedWidget.isInDrawer
+                zone.dockedWidget = id
+                
+                local widgetFrame = widget.frame
+                if widgetFrame then
+                    widgetFrame:SetParent(zone)
+                    widgetFrame:SetFrameStrata(savedWidget.isInDrawer and "DIALOG" or "BACKGROUND")
+                    widgetFrame:ClearAllPoints()
+                    widgetFrame:SetPoint("CENTER", zone, "CENTER", 0, 0)
+                    if widget.onDock then
+                        widget.onDock(widgetFrame, zone)
+                    end
+                end
+            else
+                -- Zone not available - move to drawer
+                self:MoveToDrawer(id)
+            end
+        else
+            -- Not saved as docked - move to drawer
+            self:MoveToDrawer(id)
+        end
+    end
+    
+    -- Handle any widgets not in saved state (new widgets)
+    for id, widget in pairs(widgets) do
+        if not state[id] then
+            self:MoveToDrawer(id)
         end
     end
 end
 
+--- Initialize all widgets to drawer on first load
+function WidgetManager:InitializeWidgetsToDrawer()
+    for id, widget in pairs(widgets) do
+        if not widget.isDocked then
+            self:MoveToDrawer(id)
+        end
+    end
+end
+
+--- Initialize persistence (called after dock and widgets are ready)
 function WidgetManager:InitPersistence()
-    C_Timer.After(0.5, function() self:LoadState() end)
+    C_Timer.After(PERSISTENCE_DELAY_SEC, function() self:LoadFromSavedVars() end)
+end
+
+-- [ UPDATE SCHEDULER ] ------------------------------------------------------------
+
+function WidgetManager:RegisterForScheduler(widgetId, tier, callback)
+    if not UPDATE_INTERVALS[tier] then return end
+    if not schedulerCallbacks[tier] then schedulerCallbacks[tier] = {} end
+    schedulerCallbacks[tier][widgetId] = callback
+    if not schedulerTickers[tier] then
+        schedulerTickers[tier] = C_Timer.NewTicker(UPDATE_INTERVALS[tier], function()
+            for _, cb in pairs(schedulerCallbacks[tier]) do cb() end
+        end)
+    end
+end
+
+function WidgetManager:UnregisterFromScheduler(widgetId, tier)
+    if not schedulerCallbacks[tier] then return end
+    schedulerCallbacks[tier][widgetId] = nil
+    if not next(schedulerCallbacks[tier]) and schedulerTickers[tier] then
+        schedulerTickers[tier]:Cancel()
+        schedulerTickers[tier] = nil
+    end
+end
+
+function WidgetManager:GetWidgetsByCategory()
+    local categorized = {}
+    for _, cat in pairs(WIDGET_CATEGORIES) do categorized[cat] = {} end
+    for id, widget in pairs(widgets) do
+        local catKey = widget.category or "UTILITY"
+        local catDef = WIDGET_CATEGORIES[catKey]
+        if catDef then
+            if not categorized[catDef] then categorized[catDef] = {} end
+            table.insert(categorized[catDef], widget)
+        end
+    end
+    return categorized
 end

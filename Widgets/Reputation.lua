@@ -10,76 +10,70 @@ if not Orbit then return end
 
 if not addon.BaseWidget then return end
 
-local ReputationWidget = addon.BaseWidget:New("Reputation"); addon.ReputationWidget.category = "Character"
+local ReputationWidget = addon.BaseWidget:New("Reputation")
 addon.ReputationWidget = ReputationWidget
 
--- [ STATE ] -------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 150
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ STATE ] -----------------------------------------------------------------------
 
 ReputationWidget.sessionStart = {} -- [factionID] = value at login
 ReputationWidget.currentSession = {} -- [factionID] = gain
 
--- [ HELPERS ] -----------------------------------------------------------------
+-- [ HELPERS ] ---------------------------------------------------------------------
 
-local function GetFactionColor(standing)
-    local colors = {
-        [1] = "|cffcc2222", -- Hated
-        [2] = "|cffcc2222", -- Hostile
-        [3] = "|cffee6622", -- Unfriendly
-        [4] = "|cffffcc00", -- Neutral
-        [5] = "|cff00cc00", -- Friendly
-        [6] = "|cff00cc66", -- Honored
-        [7] = "|cff00cc88", -- Revered
-        [8] = "|cff00ccaa", -- Exalted
-    }
-    return colors[standing] or "|cffffffff"
+local FACTION_COLORS = {
+    [1] = "|cffcc2222", [2] = "|cffcc2222", [3] = "|cffee6622", [4] = "|cffffcc00",
+    [5] = "|cff00cc00", [6] = "|cff00cc66", [7] = "|cff00cc88", [8] = "|cff00ccaa",
+}
+local PARAGON_COLOR = "|cff00aaff"
+
+local function GetFactionColor(standing) return FACTION_COLORS[standing] or "|cffffffff" end
+
+local function ResolveFactionProgress(factionID, standingId, earnedValue, bottomValue, topValue)
+    local value = earnedValue - bottomValue
+    local max = topValue - bottomValue
+    local label = _G["FACTION_STANDING_LABEL" .. standingId]
+    local color = GetFactionColor(standingId)
+    if C_Reputation.IsFactionParagon(factionID) then
+        local currentValue, threshold, _, hasRewardPending = C_Reputation.GetFactionParagonInfo(factionID)
+        value = currentValue % threshold
+        max = threshold
+        label = hasRewardPending and "Reward Pending" or "Paragon"
+        color = PARAGON_COLOR
+    elseif C_Reputation.IsMajorFaction(factionID) then
+        local major = C_MajorFactions.GetMajorFactionData(factionID)
+        if major then
+            value = major.renownReputationEarned or 0
+            max = major.renownLevelThreshold
+            label = string.format("Renown %d", major.renownLevel)
+            color = PARAGON_COLOR
+        end
+    end
+    return value, max, label, color
 end
 
 function ReputationWidget:GetWatchedFaction()
     local data = C_Reputation.GetWatchedFactionData()
     if not data or data.factionID == 0 then return nil end
-
     local id = data.factionID
-    local name = data.name
     local standing = data.reaction
-    local min = data.currentReactionThreshold
-    local max = data.nextReactionThreshold
-    local value = data.currentStanding
-
-    local result = {
-        name = name,
-        standing = standing,
-        min = min,
-        max = max,
-        value = value,
-        id = id,
+    local value, max, label, color = ResolveFactionProgress(
+        id, standing, data.currentStanding, data.currentReactionThreshold, data.nextReactionThreshold
+    )
+    return {
+        name = data.name, standing = standing, value = value, max = max,
+        id = id, text = label, color = color,
         isParagon = C_Reputation.IsFactionParagon(id),
         isMajor = C_Reputation.IsMajorFaction(id),
     }
-
-    -- Calculate percentages/remaining
-    if result.isParagon then
-        local currentValue, threshold, _, hasRewardPending = C_Reputation.GetFactionParagonInfo(id)
-        result.value = currentValue % threshold
-        result.max = threshold
-        result.text = "Paragon"
-        if hasRewardPending then result.text = "Reward Pending" end
-    elseif result.isMajor then
-        local major = C_MajorFactions.GetMajorFactionData(id)
-        if major then
-            result.value = major.renownReputationEarned or 0
-            result.max = major.renownLevelThreshold
-            result.text = string.format("Renown %d", major.renownLevel)
-        end
-    else
-        result.value = value - min
-        result.max = max - min
-        result.text = _G["FACTION_STANDING_LABEL"..standing] or "Standing"
-    end
-
-    return result
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function ReputationWidget:Update()
     local data = self:GetWatchedFaction()
@@ -111,7 +105,7 @@ function ReputationWidget:UpdateHistory(factionID, amount)
     -- Placeholder for future history tracking logic
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function ReputationWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -131,11 +125,20 @@ function ReputationWidget:ShowTooltip()
     GameTooltip:AddLine(" ")
     GameTooltip:AddLine("Top Factions (Recent)", 0.7, 0.7, 0.7)
 
-    local numFactions = GetNumFactions()
+    local numFactions = C_Reputation.GetNumFactions()
     local activeHeader = false
 
     for i = 1, numFactions do
-        local name, description, standingId, bottomValue, topValue, earnedValue, atWarWith, canToggleAtWar, isHeader, isCollapsed, hasRep, isWatched, isChild, factionID, hasBonusRepGain, canBeLFGBonus = GetFactionInfo(i)
+        local factionData = C_Reputation.GetFactionDataByIndex(i)
+        if not factionData then break end
+
+        local name = factionData.name
+        local isHeader = factionData.isHeader
+        local factionID = factionData.factionID
+        local standingId = factionData.reaction
+        local bottomValue = factionData.currentReactionThreshold
+        local topValue = factionData.nextReactionThreshold
+        local earnedValue = factionData.currentStanding
 
         if isHeader then
             activeHeader = (name == "Dragon Isles" or name == "The War Within" or name == "Shadowlands")
@@ -143,28 +146,10 @@ function ReputationWidget:ShowTooltip()
                 GameTooltip:AddLine(" ")
                 GameTooltip:AddLine(name, 1, 0.82, 0)
             end
-        elseif activeHeader then
-            local value = earnedValue - bottomValue
-            local max = topValue - bottomValue
-            local label = _G["FACTION_STANDING_LABEL"..standingId]
-            local color = GetFactionColor(standingId)
-
-            if C_Reputation.IsFactionParagon(factionID) then
-                local currentValue, threshold = C_Reputation.GetFactionParagonInfo(factionID)
-                value = currentValue % threshold
-                max = threshold
-                label = "Paragon"
-                color = "|cff00aaff"
-            elseif C_Reputation.IsMajorFaction(factionID) then
-                 local major = C_MajorFactions.GetMajorFactionData(factionID)
-                 if major then
-                     value = major.renownReputationEarned or 0
-                     max = major.renownLevelThreshold
-                     label = string.format("Renown %d", major.renownLevel)
-                     color = "|cff00aaff"
-                 end
-            end
-
+        elseif activeHeader and factionID then
+            local value, max, label = ResolveFactionProgress(
+                factionID, standingId, earnedValue, bottomValue, topValue
+            )
             GameTooltip:AddDoubleLine(name, string.format("%d / %d (%s)", value, max, label), 1, 1, 1, 1, 1, 1)
         end
     end
@@ -179,10 +164,10 @@ function ReputationWidget:OnClick(button)
     ToggleCharacter("ReputationFrame")
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function ReputationWidget:OnLoad()
-    self:CreateFrame(150, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
@@ -192,12 +177,16 @@ function ReputationWidget:OnLoad()
     self:RegisterEvent("MAJOR_FACTION_RENOWN_LEVEL_CHANGED")
     self:RegisterEvent("MAJOR_FACTION_UNLOCKED")
 
+    self:SetCategory("GAMEPLAY")
+
+
     self:Register()
     self:Update()
 end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() ReputationWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() ReputationWidget:OnLoad() end)
 end)

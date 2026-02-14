@@ -23,7 +23,7 @@ local GetScreenHeight = GetScreenHeight
 local InCombatLockdown = InCombatLockdown
 local CreateFrame = CreateFrame
 
--- [ PLUGIN REGISTRATION ] -----------------------------------------------------
+-- [ PLUGIN REGISTRATION ] ---------------------------------------------------------
 
 local SYSTEM_ID = "Orbit_Status"
 
@@ -37,7 +37,7 @@ local Plugin = Orbit:RegisterPlugin("Status Dock", SYSTEM_ID, {
     },
 }, Orbit.Constants and Orbit.Constants.PluginGroups and Orbit.Constants.PluginGroups.UI)
 
--- [ STATE ] -------------------------------------------------------------------
+-- [ STATE ] -----------------------------------------------------------------------
 
 local dock = nil
 local blizzardBarsHidden = false
@@ -46,7 +46,7 @@ local blizzardBarsHidden = false
 local currentBarType = "XP"
 local barTypeOrder = { "XP", "REP", "HONOR" }
 
--- [ HELPER FUNCTIONS ] --------------------------------------------------------
+-- [ HELPER FUNCTIONS ] ------------------------------------------------------------
 
 
 local function IsTopPosition()
@@ -54,7 +54,7 @@ local function IsTopPosition()
     return pos == "TOP"
 end
 
--- [ BLIZZARD BAR MANAGEMENT ] -------------------------------------------------
+-- [ BLIZZARD BAR MANAGEMENT ] -----------------------------------------------------
 
 -- Hidden frame for parking Blizzard elements
 local hiddenFrame = CreateFrame("Frame")
@@ -115,7 +115,7 @@ local function RestoreBlizzardStatusBars()
     blizzardBarsHidden = false
 end
 
--- [ DOCK SIZING AND POSITIONING ] ---------------------------------------------
+-- [ DOCK SIZING AND POSITIONING ] -------------------------------------------------
 
 local function UpdateDockLayout()
     if not dock then return end
@@ -136,13 +136,14 @@ local function UpdateDockLayout()
     end
 end
 
--- [ STATUS TRACKING ] --------------------------------------------------------
+-- [ STATUS TRACKING ] -------------------------------------------------------------
 
+local emptyStatusData = { type = nil, current = 0, max = 1, progress = 0, color = { r = 0.3, g = 0.3, b = 0.3, a = 0.5 } }
 local statusData = {
-    type = nil,  -- "XP", "REP", "HONOR"
+    type = nil,
     current = 0,
     max = 1,
-    progress = 0,  -- 0-1
+    progress = 0,
     color = { r = 1, g = 1, b = 1, a = 1 },
 }
 
@@ -181,18 +182,11 @@ local function UpdateStatusData()
     if data then
         statusData = data
     else
-        -- No data available at all, show empty bar
-        statusData = {
-            type = nil,
-            current = 0,
-            max = 1,
-            progress = 0,
-            color = { r = 0.3, g = 0.3, b = 0.3, a = 0.5 },
-        }
+        statusData = emptyStatusData
     end
 end
 
--- [ TOOLTIP ] -----------------------------------------------------------------
+-- [ TOOLTIP ] ---------------------------------------------------------------------
 
 local function ShowTooltip()
     if not dock or not statusData.type then return end
@@ -264,7 +258,7 @@ local function HideTooltip()
     GameTooltip:Hide()
 end
 
--- [ BACKDROP AND EDGE STYLING ] -----------------------------------------------
+-- [ BACKDROP AND EDGE STYLING ] ---------------------------------------------------
 
 local function UpdateBackdrop()
     if not dock then return end
@@ -343,7 +337,7 @@ local function UpdateEdgeTexture()
     end
 end
 
--- [ WIDGET DROP ZONES ] -------------------------------------------------------
+-- [ WIDGET DROP ZONES ] -----------------------------------------------------------
 
 local isEditModeActive = false
 local isDraggingWidget = false
@@ -382,7 +376,7 @@ local function UpdateWidgetZoneLayout()
     
     local slotCount = Plugin:GetSetting(1, "WidgetSlotCount") or 5
     local padding = 8
-    local drawerButtonWidth = 8  -- Space for edge block button
+    local drawerButtonWidth = 8
     local dockWidth = dock:GetWidth()
     local dockHeight = dock:GetHeight()
     local availableWidth = dockWidth - drawerButtonWidth - padding
@@ -468,11 +462,25 @@ local function CreateWidgetZones()
     UpdateWidgetZoneLayout()
 end
 
--- [ WIDGET DRAWER ] -----------------------------------------------------------
+-- [ WIDGET DRAWER ] ---------------------------------------------------------------
 
 local drawerPanel = nil
 local drawerButton = nil
-local DRAWER_ZONE_COUNT = 12  -- Max widgets that can be stored in drawer
+
+local MIN_DRAWER_ZONES = 12
+local DRAWER_COLS = 4
+local DRAWER_ZONE_WIDTH = 90
+local DRAWER_ZONE_HEIGHT = 24
+local DRAWER_INNER_PAD = 10
+local DRAWER_OUTER_PAD = 20
+local DRAWER_BOTTOM_PAD = 20
+local DRAWER_HEADER_HEIGHT = 40
+
+local function GetDrawerZoneCount()
+    local wm = addon.WidgetManager
+    local widgetCount = wm and wm.GetWidgetCount and wm:GetWidgetCount() or MIN_DRAWER_ZONES
+    return math.max(widgetCount, MIN_DRAWER_ZONES)
+end
 
 local function CreateDrawerZone(index)
     local zone = CreateFrame("Frame", "OrbitStatusDrawerZone" .. index, drawerPanel)
@@ -502,36 +510,24 @@ end
 
 local function UpdateDrawerLayout()
     if not drawerPanel or not drawerPanel.zones then return end
-    
-    local innerPadding = 10
-    local outerPadding = 20
-    local bottomPadding = 20
-    
-    local headerHeight = 40  -- Space for title and close button
-    local cols = 4
-    local rows = 3
-    local zoneWidth = 90
-    local zoneHeight = 24
-    
-    local panelWidth = (zoneWidth * cols) + (innerPadding * (cols - 1)) + (outerPadding * 2)
-    local panelHeight = headerHeight + (zoneHeight * rows) + (innerPadding * (rows - 1)) + outerPadding + bottomPadding
-    
+
+    local zoneCount = #drawerPanel.zones
+    local rows = math.ceil(zoneCount / DRAWER_COLS)
+    local panelWidth = (DRAWER_ZONE_WIDTH * DRAWER_COLS) + (DRAWER_INNER_PAD * (DRAWER_COLS - 1)) + (DRAWER_OUTER_PAD * 2)
+    local panelHeight = DRAWER_HEADER_HEIGHT + (DRAWER_ZONE_HEIGHT * rows) + (DRAWER_INNER_PAD * (rows - 1)) + DRAWER_OUTER_PAD + DRAWER_BOTTOM_PAD
+
     drawerPanel:SetSize(panelWidth, panelHeight)
-    
-    for i = 1, DRAWER_ZONE_COUNT do
-        local zone = drawerPanel.zones[i]
-        if zone then
-            local col = ((i - 1) % cols)
-            local row = math.floor((i - 1) / cols)
-            
-            zone:SetSize(zoneWidth, zoneHeight)
-            zone:ClearAllPoints()
-            zone:SetPoint("TOPLEFT", drawerPanel, "TOPLEFT", 
-                outerPadding + col * (zoneWidth + innerPadding), 
-                -headerHeight - outerPadding - row * (zoneHeight + innerPadding))
-            zone:Show()
-            zone.border:Hide()
-        end
+
+    for i, zone in ipairs(drawerPanel.zones) do
+        local col = ((i - 1) % DRAWER_COLS)
+        local row = math.floor((i - 1) / DRAWER_COLS)
+        zone:SetSize(DRAWER_ZONE_WIDTH, DRAWER_ZONE_HEIGHT)
+        zone:ClearAllPoints()
+        zone:SetPoint("TOPLEFT", drawerPanel, "TOPLEFT",
+            DRAWER_OUTER_PAD + col * (DRAWER_ZONE_WIDTH + DRAWER_INNER_PAD),
+            -DRAWER_HEADER_HEIGHT - DRAWER_OUTER_PAD - row * (DRAWER_ZONE_HEIGHT + DRAWER_INNER_PAD))
+        zone:Show()
+        zone.border:Hide()
     end
 end
 
@@ -564,9 +560,9 @@ local function CreateDrawerPanel()
         drawerPanel:Hide()
     end)
     
-    -- Create drawer zones
     drawerPanel.zones = {}
-    for i = 1, DRAWER_ZONE_COUNT do
+    local zoneCount = GetDrawerZoneCount()
+    for i = 1, zoneCount do
         drawerPanel.zones[i] = CreateDrawerZone(i)
     end
     
@@ -591,53 +587,31 @@ local function CreateDrawerPanel()
         addon.WidgetManager:DisableDrawerWidgets()
     end
     
-    return drawerPanel
 end
 
 local function CreateDrawerButton()
     if drawerButton then return drawerButton end
     if not dock then return nil end
-    
     drawerButton = CreateFrame("Button", "OrbitStatusDrawerButton", dock)
-    drawerButton:SetWidth(16) -- Wider hit area
+    drawerButton:SetWidth(16)
     drawerButton:SetPoint("TOPLEFT", dock, "TOPLEFT", 0, 0)
     drawerButton:SetPoint("BOTTOMLEFT", dock, "BOTTOMLEFT", 0, 0)
     drawerButton:SetFrameLevel(dock:GetFrameLevel() + 10)
-    
-    -- Icon instead of block
-    drawerButton.icon = drawerButton:CreateTexture(nil, "OVERLAY")
-    drawerButton.icon:SetSize(12, 12)
-    drawerButton.icon:SetPoint("CENTER")
-    drawerButton.icon:SetTexture("Interface\\Buttons\\UI-OptionsButton")
-    drawerButton.icon:SetAlpha(0.5)
-    
-    -- Hover effect
     drawerButton:SetScript("OnEnter", function(self)
-        self.icon:SetAlpha(1)
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:AddLine("Widget Drawer")
         GameTooltip:Show()
     end)
-    
-    drawerButton:SetScript("OnLeave", function(self)
-        self.icon:SetAlpha(0.5)
-        GameTooltip:Hide()
-    end)
-    
-    -- Toggle drawer on click via WidgetManager
+    drawerButton:SetScript("OnLeave", function() GameTooltip:Hide() end)
     drawerButton:SetScript("OnClick", function()
-        if addon.WidgetManager then
-            addon.WidgetManager:ToggleDrawer()
-        end
+        if addon.ToggleDrawer then addon.ToggleDrawer() end
     end)
-    
     return drawerButton
 end
 
--- Hook into dock drop targets visibility
-function dock:ShowDropTargets(show)
-    if not self.widgetZones then return end
-    for _, zone in ipairs(self.widgetZones) do
+local function ShowDropTargets(show)
+    if not dock or not dock.widgetZones then return end
+    for _, zone in ipairs(dock.widgetZones) do
         if show then
             zone.border:Show()
             zone.highlight:Show()
@@ -649,9 +623,8 @@ function dock:ShowDropTargets(show)
 end
 
 local function ToggleDrawer(show)
-    if not drawerPanel then
-        CreateDrawerPanel()
-    end
+    if not drawerPanel then CreateDrawerPanel() end
+    if show == nil then show = not drawerPanel:IsShown() end
     if show then
         local isTop = IsTopPosition()
         drawerPanel:ClearAllPoints()
@@ -666,13 +639,25 @@ local function ToggleDrawer(show)
     end
 end
 
--- Export for WidgetManager access
 addon.GetDrawerPanel = function() return drawerPanel end
 addon.GetDrawerZones = function() return drawerPanel and drawerPanel.zones end
 addon.ToggleDrawer = ToggleDrawer
 addon.IsDrawerOpen = function() return drawerPanel and drawerPanel:IsShown() end
 
--- [ REFRESH LOGIC ] -----------------------------------------------------------
+addon.GrowDrawer = function(targetCount)
+    if not drawerPanel then CreateDrawerPanel() end
+    local zones = drawerPanel.zones
+    local needed = math.max(targetCount, MIN_DRAWER_ZONES)
+    if #zones >= needed then return end
+    for i = #zones + 1, needed do
+        zones[i] = CreateDrawerZone(i)
+    end
+    UpdateDrawerLayout()
+end
+
+addon.GetDrawerZoneCount = function() return drawerPanel and #drawerPanel.zones or 0 end
+
+-- [ REFRESH LOGIC ] ---------------------------------------------------------------
 
 local function RefreshDock()
     if not dock then return end
@@ -697,7 +682,7 @@ local function RefreshDock()
     end)
 end
 
--- [ DOCK CREATION ] -----------------------------------------------------------
+-- [ DOCK CREATION ] ---------------------------------------------------------------
 
 local function CreateDock()
     local frame = CreateFrame("Frame", "OrbitStatusDock", UIParent)
@@ -718,14 +703,8 @@ local function CreateDock()
     frame.edgeFill = frame:CreateTexture(nil, "ARTWORK")
     frame.edgeFill:SetColorTexture(1, 1, 1, 1)
     
-    -- No dragging - position controlled via settings only
-    frame:EnableMouse(false)
     frame:SetMovable(false)
-    
-    -- Show the frame
     frame:Show()
-    
-    -- Enable mouse interaction for tooltip and scroll wheel
     frame:EnableMouse(true)
     frame:SetScript("OnEnter", ShowTooltip)
     frame:SetScript("OnLeave", HideTooltip)
@@ -762,7 +741,7 @@ local function CreateDock()
     return frame
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function Plugin:OnLoad()
     -- Create the dock frame
@@ -822,12 +801,12 @@ function Plugin:OnLoad()
         Orbit.EventBus:On("EDIT_MODE_ENTERED", function()
             isEditModeActive = true
             UpdateWidgetZoneLayout()
-        end)
+        end, Plugin)
         Orbit.EventBus:On("EDIT_MODE_EXITED", function()
             isEditModeActive = false
             ClearAllZoneHighlights()
             UpdateWidgetZoneLayout()
-        end)
+        end, Plugin)
     end
     
     -- Connect to WidgetManager (widgets load after this)
@@ -852,7 +831,7 @@ function Plugin:OnUnload()
     RestoreBlizzardStatusBars()
 end
 
--- [ SETTINGS UI ] -------------------------------------------------------------
+-- [ SETTINGS UI ] -----------------------------------------------------------------
 
 function Plugin:AddSettings(dialog, systemFrame)
     local schema = {

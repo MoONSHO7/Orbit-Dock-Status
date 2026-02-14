@@ -12,36 +12,42 @@ if not addon.BaseWidget then return end
 
 local ProfessionsWidget = addon.BaseWidget:New("Professions")
 addon.ProfessionsWidget = ProfessionsWidget
-ProfessionsWidget.category = "Economy"
 
--- [ HELPER ] ------------------------------------------------------------------
+-- [ CONSTANTS ] --------------------------------------------------------------------------
+
+local FRAME_WIDTH = 120
+local FRAME_HEIGHT = 20
+local INIT_DELAY_SEC = 1
+
+-- [ HELPER ] ----------------------------------------------------------------------
 
 function ProfessionsWidget:GetProfessions()
-    -- GetProfessions returns indices for GetProfessionInfo
     local prof1, prof2, arch, fish, cook = GetProfessions()
     local list = {}
 
-    local function Add(index, secondary)
-        if not index then return end
-        local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specializationIndex, specializationOffset = GetProfessionInfo(index)
-        table.insert(list, { name = name, icon = icon, rank = rank, max = maxRank, id = skillLine, secondary = secondary })
+    if prof1 then
+        local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specializationIndex, specializationOffset = GetProfessionInfo(prof1)
+        table.insert(list, { name = name, icon = icon, rank = rank, max = maxRank, id = skillLine })
+    end
+    if prof2 then
+        local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specializationIndex, specializationOffset = GetProfessionInfo(prof2)
+        table.insert(list, { name = name, icon = icon, rank = rank, max = maxRank, id = skillLine })
     end
 
-    Add(prof1, false)
-    Add(prof2, false)
-    Add(cook, true)
-    Add(fish, true)
-    Add(arch, true)
+    if cook then
+        local name, icon, rank, maxRank, numSpells, spellOffset, skillLine, rankModifier, specializationIndex, specializationOffset = GetProfessionInfo(cook)
+        table.insert(list, { name = name, icon = icon, rank = rank, max = maxRank, id = skillLine, secondary = true })
+    end
 
     return list
 end
 
--- [ UPDATE ] ------------------------------------------------------------------
+-- [ UPDATE ] ----------------------------------------------------------------------
 
 function ProfessionsWidget:Update()
     local list = self:GetProfessions()
-    local text = ""
 
+    local text = ""
     for _, p in ipairs(list) do
         if not p.secondary then
             if text ~= "" then text = text .. " " end
@@ -50,25 +56,10 @@ function ProfessionsWidget:Update()
     end
 
     if text == "" then text = "No Professions" end
-    self:SetFormattedText(nil, text)
+    self:SetText(text)
 end
 
--- [ INTERACTION ] -------------------------------------------------------------
-
-function ProfessionsWidget:GenerateMenu(owner, rootDescription)
-    local list = self:GetProfessions()
-
-    if #list == 0 then
-        rootDescription:CreateTitle("No Professions")
-        return
-    end
-
-    for _, p in ipairs(list) do
-        rootDescription:CreateButton(string.format("|T%s:14|t %s", p.icon, p.name), function()
-            C_TradeSkillUI.OpenTradeSkill(p.id)
-        end)
-    end
-end
+-- [ INTERACTION ] -----------------------------------------------------------------
 
 function ProfessionsWidget:ShowTooltip()
     GameTooltip:SetOwner(self.frame, "ANCHOR_TOP")
@@ -80,37 +71,44 @@ function ProfessionsWidget:ShowTooltip()
 
     for _, p in ipairs(list) do
         GameTooltip:AddDoubleLine(string.format("|T%s:14|t %s", p.icon, p.name), string.format("%d/%d", p.rank, p.max), 1, 1, 1, 1, 1, 1)
+
+        -- Check Cooldowns? Requires scanning spellbook or known cooldown IDs.
+        -- This is complex API-wise without a database of CD spells.
+        -- For now, list is fine.
     end
 
     GameTooltip:AddLine(" ")
-    GameTooltip:AddDoubleLine("Left Click", "Open Primary", 0.7, 0.7, 0.7, 1, 1, 1)
-    GameTooltip:AddDoubleLine("Right Click", "Menu", 0.7, 0.7, 0.7, 1, 1, 1)
+    GameTooltip:AddDoubleLine("Click", "Open Profession", 0.7, 0.7, 0.7, 1, 1, 1)
 
     GameTooltip:Show()
 end
 
 function ProfessionsWidget:OnClick(button)
+    -- Toggle first profession
     local prof1 = GetProfessions()
     if prof1 then
-        local _, _, _, _, _, _, skillLine = GetProfessionInfo(prof1)
+        local name, icon, rank, maxRank, numSpells, spellOffset, skillLine = GetProfessionInfo(prof1)
+        -- OpenTradeSkill(skillLine) -- Deprecated
+        -- Use C_TradeSkillUI.OpenTradeSkill(skillLine)
         C_TradeSkillUI.OpenTradeSkill(skillLine)
     end
 end
 
--- [ LIFECYCLE ] ---------------------------------------------------------------
+-- [ LIFECYCLE ] -------------------------------------------------------------------
 
 function ProfessionsWidget:OnLoad()
-    self:CreateFrame(120, 20)
+    self:CreateFrame(FRAME_WIDTH, FRAME_HEIGHT)
 
     self:SetUpdateFunc(function() self:Update() end)
     self:SetTooltipFunc(function() self:ShowTooltip() end)
     self:SetClickFunc(function(_, btn) self:OnClick(btn) end)
 
-    self:RegisterMenu(function(owner, root) self:GenerateMenu(owner, root) end)
-
-    self:RegisterEvent("TRADE_SKILL_UPDATE")
+    self:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
     self:RegisterEvent("SKILL_LINES_CHANGED")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+
+    self:SetCategory("GAMEPLAY")
+
 
     self:Register()
     self:Update()
@@ -118,6 +116,7 @@ end
 
 local initFrame = CreateFrame("Frame")
 initFrame:RegisterEvent("PLAYER_LOGIN")
-initFrame:SetScript("OnEvent", function()
-    C_Timer.After(1, function() ProfessionsWidget:OnLoad() end)
+initFrame:SetScript("OnEvent", function(self)
+    self:SetScript("OnEvent", nil)
+    C_Timer.After(INIT_DELAY_SEC, function() ProfessionsWidget:OnLoad() end)
 end)
