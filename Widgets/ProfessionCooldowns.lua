@@ -34,7 +34,10 @@ end
 
 -- [ UPDATES ] ---------------------------------------------------------------------
 
+ProfCDWidget.cachedCooldowns = {}
+
 function ProfCDWidget:GetCooldowns()
+    if InCombatLockdown() then return self.cachedCooldowns end
     local cooldowns = {}
     local professions = { GetProfessions() }
     for _, idx in pairs(professions) do
@@ -56,6 +59,7 @@ function ProfCDWidget:GetCooldowns()
         end
     end
     table.sort(cooldowns, function(a, b) return a.remaining < b.remaining end)
+    self.cachedCooldowns = cooldowns
     return cooldowns
 end
 
@@ -105,6 +109,7 @@ function ProfCDWidget:OnLoad()
     self.leftClickHint = "Open Professions"
     self:RegisterEvent("TRADE_SKILL_LIST_UPDATE")
     self:RegisterEvent("PLAYER_ENTERING_WORLD")
+    self:RegisterEvent("PLAYER_REGEN_ENABLED")
     self:SetCategory("CHARACTER")
     self:Register()
     self:SetUpdateTier("GLACIAL")

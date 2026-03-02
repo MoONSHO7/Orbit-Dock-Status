@@ -1,30 +1,18 @@
--- StatusDock.lua
--- Main plugin file: Customizable status panel replacing Blizzard Status Bars
-
-local addonName, addon = ...
+-- StatusDock.lua: Customizable status panel replacing Blizzard Status Bars
+local _, addon = ...
 local SD = addon.StatusData
 
--- Get Orbit reference (registered globally by Init.lua before dependencies load)
 ---@type Orbit
 local Orbit = Orbit
-if not Orbit then
-    return
-end
-
--- Get Engine reference for Edit Mode integration
 local OrbitEngine = Orbit.Engine
-
--- Get LibSharedMedia for texture management
 local LSM = LibStub("LibSharedMedia-3.0")
 
--- Cache frequently used globals
 local GetScreenWidth = GetScreenWidth
 local GetScreenHeight = GetScreenHeight
 local InCombatLockdown = InCombatLockdown
 local CreateFrame = CreateFrame
 
 -- [ PLUGIN REGISTRATION ] ---------------------------------------------------------
-
 local SYSTEM_ID = "Orbit_Status"
 
 local Plugin = Orbit:RegisterPlugin("Status Dock", SYSTEM_ID, {
@@ -32,17 +20,14 @@ local Plugin = Orbit:RegisterPlugin("Status Dock", SYSTEM_ID, {
         Height = 24,
         EdgeSize = 2,
         BackdropColor = { r = 0.1, g = 0.1, b = 0.1, a = 0.8 },
-        Position = "BOTTOM",  -- "BOTTOM" or "TOP"
-        WidgetSlotCount = 5,  -- 3-12 widget drop zones
+        Position = "BOTTOM",
+        WidgetSlotCount = 5,
     },
-}, Orbit.Constants and Orbit.Constants.PluginGroups and Orbit.Constants.PluginGroups.UI)
+})
 
 -- [ STATE ] -----------------------------------------------------------------------
-
 local dock = nil
 local blizzardBarsHidden = false
-
--- Current bar type: "XP", "REP", "HONOR" (auto-detected or scroll-selected)
 local currentBarType = "XP"
 local barTypeOrder = { "XP", "REP", "HONOR" }
 
@@ -277,11 +262,9 @@ local function UpdateEdgeTexture()
     -- Background size from global border size
     local backgroundSize = (Orbit.db and Orbit.db.GlobalSettings and Orbit.db.GlobalSettings.BorderSize) or 2
     
-    -- Get pixel-perfect sizes
-    if Orbit.Engine and Orbit.Engine.Pixel then
-        edgeSize = Orbit.Engine.Pixel:Snap(edgeSize, dock:GetEffectiveScale())
-        backgroundSize = Orbit.Engine.Pixel:Snap(backgroundSize, dock:GetEffectiveScale())
-    end
+    local scale = dock:GetEffectiveScale()
+    edgeSize = OrbitEngine.Pixel:Snap(edgeSize, scale)
+    backgroundSize = OrbitEngine.Pixel:Snap(backgroundSize, scale)
     
     -- Position edges on the inner side (facing screen center)
     dock.edgeBackground:ClearAllPoints()
@@ -796,18 +779,15 @@ function Plugin:OnLoad()
     
     self:RegisterStandardEvents()
     
-    -- Listen for Edit Mode enter/exit to show/hide zone borders
-    if Orbit.EventBus then
-        Orbit.EventBus:On("EDIT_MODE_ENTERED", function()
-            isEditModeActive = true
-            UpdateWidgetZoneLayout()
-        end, Plugin)
-        Orbit.EventBus:On("EDIT_MODE_EXITED", function()
-            isEditModeActive = false
-            ClearAllZoneHighlights()
-            UpdateWidgetZoneLayout()
-        end, Plugin)
-    end
+    Orbit.EventBus:On("EDIT_MODE_ENTERED", function()
+        isEditModeActive = true
+        UpdateWidgetZoneLayout()
+    end, Plugin)
+    Orbit.EventBus:On("EDIT_MODE_EXITED", function()
+        isEditModeActive = false
+        ClearAllZoneHighlights()
+        UpdateWidgetZoneLayout()
+    end, Plugin)
     
     -- Connect to WidgetManager (widgets load after this)
     C_Timer.After(0.1, function()
@@ -826,6 +806,9 @@ function Plugin:ApplySettings()
     if not dock then return end
     RefreshDock()
 end
+
+-- Status Dock is a persistent screen-edge panel — never hide on mount
+function Plugin:UpdateVisibility() end
 
 function Plugin:OnUnload()
     RestoreBlizzardStatusBars()
@@ -854,7 +837,7 @@ function Plugin:AddSettings(dialog, systemFrame)
         },
     }
     
-    Orbit.Config:Render(dialog, systemFrame, self, schema)
+    OrbitEngine.Config:Render(dialog, systemFrame, self, schema)
 end
 
 -- Export for debugging

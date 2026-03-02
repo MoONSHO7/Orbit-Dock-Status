@@ -29,10 +29,11 @@ local TELEPORT_ITEMS = {
 -- [ HELPERS ] ---------------------------------------------------------------------
 
 function HearthWidget:GetHearthCooldown()
-    local start, duration = C_Container.GetItemCooldown(HEARTHSTONE_ID)
+    local start, duration = C_Item.GetItemCooldown(HEARTHSTONE_ID)
+    if not start or not duration then return 0 end
+    if issecretvalue(start) or issecretvalue(duration) then return 0 end
     if start == 0 or duration == 0 then return 0 end
-    local remaining = (start + duration) - GetTime()
-    return math.max(0, remaining)
+    return math.max(0, (start + duration) - GetTime())
 end
 
 function HearthWidget:FormatCooldown(seconds)
@@ -68,8 +69,9 @@ function HearthWidget:ShowTooltip()
     for _, item in ipairs(TELEPORT_ITEMS) do
         local count = C_Item.GetItemCount(item.id)
         if count > 0 then
-            local start, duration = C_Container.GetItemCooldown(item.id)
-            local remaining = (start > 0 and duration > 0) and math.max(0, (start + duration) - GetTime()) or 0
+            local start, duration = C_Item.GetItemCooldown(item.id)
+            local safe = start and duration and not issecretvalue(start) and not issecretvalue(duration)
+            local remaining = (safe and start > 0 and duration > 0) and math.max(0, (start + duration) - GetTime()) or 0
             local cdStr = remaining > 0 and string.format("|cffff8000%s|r", self:FormatCooldown(remaining)) or "|cff00ff00Ready|r"
             GameTooltip:AddDoubleLine("  " .. item.name, cdStr, 1, 1, 1, 0.7, 0.7, 0.7)
         end
