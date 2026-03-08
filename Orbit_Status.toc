@@ -71,4 +71,3 @@ Widgets\WeatherAndTime.lua
 Widgets\Mail.lua
 Widgets\FactionPower.lua
 Widgets\Fishing.lua
-Widgets\Keystroke.lua

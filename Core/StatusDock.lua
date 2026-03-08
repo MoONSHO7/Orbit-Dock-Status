@@ -837,6 +837,7 @@ function Plugin:AddSettings(dialog, systemFrame)
         },
     }
     
+    if not OrbitEngine.Config then return end
     OrbitEngine.Config:Render(dialog, systemFrame, self, schema)
 end
 
