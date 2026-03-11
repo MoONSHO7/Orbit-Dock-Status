@@ -41,8 +41,8 @@ function BuffsWidget:CheckBuffs()
     for i = 1, MAX_BUFF_SCAN do
         local auraData = C_UnitAuras.GetAuraDataByIndex("player", i, "HELPFUL")
         if not auraData then break end
-        if auraData.name == WELL_FED_NAME then hasFood = true end
-        if FLASK_DURATIONS[auraData.duration] then hasFlask = true end
+        if not issecretvalue(auraData.name) and auraData.name == WELL_FED_NAME then hasFood = true end
+        if not issecretvalue(auraData.duration) and FLASK_DURATIONS[auraData.duration] then hasFlask = true end
     end
 
     local hasMainHandEnchant = GetWeaponEnchantInfo()

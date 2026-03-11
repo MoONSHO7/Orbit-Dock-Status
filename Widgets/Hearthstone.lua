@@ -30,8 +30,7 @@ local TELEPORT_ITEMS = {
 
 function HearthWidget:GetHearthCooldown()
     local start, duration = C_Item.GetItemCooldown(HEARTHSTONE_ID)
-    if not start or not duration then return 0 end
-    if issecretvalue(start) or issecretvalue(duration) then return 0 end
+    if not start or not duration or issecretvalue(start) or issecretvalue(duration) then return 0 end
     if start == 0 or duration == 0 then return 0 end
     return math.max(0, (start + duration) - GetTime())
 end
